@@ -1,7 +1,6 @@
 Type: Package
 Package: fluxtools
-Title: An Interactive 'shiny' App for Reproducible QA/QC of Eddy
-    Covariance Data Aligned with AmeriFlux Standards
+Title: A 'shiny' App for Reproducible QA/QC of Eddy Covariance Data
 Version: 0.3.0
 Authors@R: 
     person("Kesondra", "Key", , "keyke@iu.edu", role = c("aut", "cre"))

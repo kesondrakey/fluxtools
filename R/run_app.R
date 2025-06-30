@@ -8,18 +8,14 @@
 #' No return value, called for side effects (it launches the Shiny app).
 #'
 #' @examples
-#' \dontshow{
 #' # — Quick automated checks —
 #' # These run during R CMD check, but users don’t see them:
 #' try(run_flux_qaqc(-13))  # should print error message
 #' try(run_flux_qaqc(15))   # should print error message
-#' }
 #'
-#' \dontrun{
 #' # — Interactive demo (only in an interactive R session) —
 #' if (interactive()) {
 #'   run_flux_qaqc(-5)     # US Eastern Standard Time ('UTC-5')
-#' }
 #' }
 #'
 #'
