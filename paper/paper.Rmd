@@ -71,12 +71,11 @@ In practice, data managers resort to custom scripts, manual visualization, and f
 By combining interactivity with code-based reproducibility, *Fluxtools* streamlines QA/QC workflows by enhancing transparency, reducing manual effort, and accelerating the preparation of flux data for repository submissions (e.g., Ameriflux). Ultimately, *Fluxtools* lowers the barriers to robust and reproducible QA/QC, allowing data managers and scientists to spend less time on manual anomaly detection and more on scientific analysis and interpretation.
 
 # Code Example
-*Fluxtools can be installed from [Github](https://github.com/kesondrakey/fluxtools).*
-
 ## Installation
 ```{r Installation, eval=FALSE}
-# Option 1.) Install from CRAN (Fluxtools R Package submission pending)
-#install.packages("fluxtools")
+# Option 1.) Install from CRAN 
+install.packages("fluxtools")
+library(fluxtools)
 
 # Option 2.) Install most recent version from GitHub
 library(remotes)
@@ -88,13 +87,13 @@ remotes::install_git("https://github.com/kesondrakey/fluxtools.git")
 library(fluxtools)
 
 #Set your site’s UTC offset (e.g., –5 for Eastern Standard Time)
-fluxtools::run_flux_qaqc(-5)
+run_flux_qaqc(-5)
 ```
 
 # Acknowledgments 
 Fluxtools is an independent project developed in my role as Co-Principal Investigator for the AmeriFlux [US-VT1](https://ameriflux.lbl.gov/sites/siteinfo/US-VT1) [@VT1] and [US-VT2](https://ameriflux.lbl.gov/sites/siteinfo/US-VT2) [@VT2] sites to streamline our QA/QC pipeline. I thank AmeriFlux for maintaining clear, up-to-date data‐formatting specifications (see [AmeriFlux Data Variables](https://ameriflux.lbl.gov/wp-content/uploads/2015/10/AmeriFlux_DataVariables.pdf)) and I acknowledge the broader *R* and *Shiny* communities for their efforts in advancing interactive data‐visualization tools.  
 
-I am grateful to Dr. Kim Novick (Indiana University), Housen Chu (AmeriFlux), and Benju Baniya (Texas A&M University) for their invaluable expertise in assisting with the AmeriFlux data processing workflow. Without their support, this data pipeline would not have been possible. I also thank Dr. Mallory Barnes, Dr. Daniel Beverly, and Dr. Xian Wang (all at Indiana University) for their support during development and testing. Special thanks goes to George Burba (LI-COR Biosciences) for his encouragement and for insightful discussions that have helped shape the future of *Fluxtools*.
+I am grateful to Dr. Kim Novick (Indiana University), Housen Chu (AmeriFlux), and Benju Baniya (Texas A&M University) for their expertise in assisting with the AmeriFlux data processing workflow. Without their support, this data pipeline would not have been possible. I also thank Dr. Mallory Barnes, Dr. Daniel Beverly, and Dr. Xian Wang (all at Indiana University) for their support during development and testing. Special thanks goes to George Burba (LI-COR Biosciences) for his encouragement and for insightful discussions that have helped shape the future of *Fluxtools*.
 
 This work was supported by NSF's Division of Environmental Biology (DEB) Dynamics of Socio-Environmental Systems Program (Award 22-06086) and NASA’s Carbon Monitoring System (Award 80NSSC23K1254). 
 
