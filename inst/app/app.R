@@ -6,8 +6,8 @@ library(dplyr)
 library(shinyBS)   # for bsTooltip()
 library(bslib)     # for theming
 
-# Allow larger uploads (here: up to 300 MB)
-options(shiny.maxRequestSize = 300 * 1024^2)
+# Allow larger uploads (here: up to 500 MB)
+options(shiny.maxRequestSize = 500 * 1024^2)
 
 
 ## ── 1) Theme ───────────────────────────────────────────────────────

@@ -55,7 +55,7 @@ run_flux_qaqc(-5)
 
  Example workflow
 
-1. **Upload**: Select your AmeriFlux-style CSV (e.g., `US_VT1_HH_202401010000_202501010000.csv`). Files can be up to 100 MB
+1. **Upload**: Select your AmeriFlux-style CSV (e.g., `US_VT1_HH_202401010000_202501010000.csv`). Files can be up to 500MB (larger file sizes might be harder on the Shiny interface)
 
 2. **Choose Year(s)**: By default “all” is selected, but you can subset to specific years
 
