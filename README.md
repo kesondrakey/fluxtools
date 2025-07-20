@@ -36,7 +36,7 @@ Key, K. (2025). fluxtools (version 0.3.0) [Computer software]. Zenodo. https://d
   Choose any numeric variable for X (often `TIMESTAMP_START`) and Y; drag a box or lasso to flag points
 
 - **Multi-Year Support**  
-  Upload up to 100 MB of flux‐tower CSV (all years by default, or pick a subset)
+  Upload up to 500 MB of flux‐tower CSV (all years by default, or pick a subset by year)
 
 - **Dark/Light Mode**  
   Toggle UI theme on the fly (switch is in the bottom-right of the side panel)
@@ -62,7 +62,7 @@ Key, K. (2025). fluxtools (version 0.3.0) [Computer software]. Zenodo. https://d
 # Install from CRAN 
 install.packages("fluxtools")
 
-# Install from GitHub
+# Install from directly from GitHub
 library(devtools) 
 devtools::install_github("kesondrakey/fluxtools")
 
