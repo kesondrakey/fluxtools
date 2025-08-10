@@ -1,13 +1,11 @@
-#How to handle different computer resolutions?
-
 library(shiny)
 library(plotly)
 library(dplyr)
 library(shinyBS)   # for bsTooltip()
 library(bslib)     # for theming
 
-# Allow larger uploads (here: up to 500 MB)
-options(shiny.maxRequestSize = 500 * 1024^2)
+# Allow larger uploads (here: up to 1gb)
+options(shiny.maxRequestSize = 1024 * 1024 * 1024) #1gb
 
 
 ## ── 1) Theme ───────────────────────────────────────────────────────
