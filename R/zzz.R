@@ -5,10 +5,13 @@
   packageStartupMessage("Welcome to fluxtools!")
   packageStartupMessage("Version: ", version)
 
-  packageStartupMessage("\nTo start the app, use: run_flux_qaqc(offset), where `offset` is your UTC time offset")
-  packageStartupMessage("Example: \nrun_flux_qaqc(-5) #for Eastern Time (UTC-5)\n")
+  packageStartupMessage("\nTo start the app, use 'run_flux_qaqc(offset)', where 'offset' is your UTC time offset:")
+  packageStartupMessage("run_flux_qaqc(-5) #for Eastern Time (UTC-5)")
 
-  packageStartupMessage("To view all vignettes: \nbrowseVignettes('fluxtools')\n")
+  packageStartupMessage("\nApply Physical Range Module filters:")
+  packageStartupMessage("apply_prm(df) #Turn data that does not make sense in the physical world to NA (source: Ameriflux Technical Documents)")
+
+  packageStartupMessage("\nTo view vignettes: \nbrowseVignettes('fluxtools')\n")
   packageStartupMessage("To view the citation: \ncitation('fluxtools')")
   #packageStartupMessage("To see the vignette, run vignette('introduction', package = 'fluxtools')")
 }

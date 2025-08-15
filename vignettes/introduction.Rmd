@@ -117,4 +117,76 @@ run_flux_qaqc(-5)
 
 14. **Export cleaned data**: Download the cleaned .csv reflecting your confirmed removals. This button will download a zip file containing your .csv, reflecting changes from using the "apply removals" button, and includes a compiled R script with the R code for those removals.
 
+
+# Physical Boundary Module (PRM) function:
+
+The **Physical Range Module (PRM)** removes out-of-range values to `NA` based on similar **variables** using patterns like `^SWC($|_)` or `^P($|_)`.  
+Columns containing `"QC"` are skipped by default. No columns are removed.
+
+Source of ranges: *AmeriFlux Technical Documents, Table A1 (Physical Range Module)*.
+
+## Quick start 
+```{r}
+# tiny demo dataset with a few out-of-range values
+set.seed(1)
+df <- tibble::tibble(
+  TIMESTAMP_START = seq.POSIXt(as.POSIXct("2024-01-01", tz = "UTC"),
+                               length.out = 10, by = "30 min"),
+  SWC_1_1_1 = c(10, 20, 150, NA, 0.5, 99, 101, 50, 80, -3),  # bad: 150, 101, -3; 0.5 triggers SWC unit note
+  P         = c(0, 10, 60, NA, 51, 3, 0, 5, 100, -1),        # bad: 60, 51, 100, -1
+  RH_1_1_1  = c(10, 110, 50, NA, 0, 100, -5, 101, 75, 30),   # bad: 110, -5, 101
+  SWC_QC    = sample(0:2, 10, replace = TRUE)                # QC col should be ignored
+)
+
+# To see the Physical Boundary Module (PRM) rules:
+get_prm_rules()
+
+#Apply filter to all relevant variables
+res <- apply_prm(df)
+
+# PRM summary (counts and % replaced per column)
+res$summary
+
+# Only set range for SWC 
+df_filtered_swc <- apply_prm(df, include = "SWC")
+
+# Only set range for SWC + P 
+df_filtered_swc_P <- apply_prm(df, include = c("SWC", "P"))
+
+```
+
+
+## Physical Range Module Values
+```{r prm-rules-table, echo=FALSE, message=FALSE}
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+rules_tbl <- get_prm_rules() |>
+  transmute(
+    Variable    = variable,
+    Description = description,
+    Units       = units,
+    'Min to Max' = sprintf("%s to %s",
+                           ifelse(is.na(min), "NA", min),
+                           ifelse(is.na(max), "NA", max))
+  ) |>
+  arrange(Variable)
+
+note_txt <- if (knitr::is_latex_output()) {
+  "\\emph{Source: AmeriFlux Technical Documents}"
+} else {
+  "<em>Source: AmeriFlux Technical Documents</em>"
+}
+
+kbl(rules_tbl,
+    caption = "Physical Range Module (PRM) bounds",
+    booktabs = TRUE, escape = FALSE) |>
+  kable_styling(full_width = FALSE, latex_options = c("threeparttable")) |>
+  footnote(general = note_txt, general_title = "", escape = FALSE)
+
+```
+
+
+
 *Fluxtools is an independent project and is not affiliated with or endorsed by the AmeriFlux Network. “AmeriFlux” is a registered trademark of Lawrence Berkeley National Laboratory and is used here for identification purposes only.*
