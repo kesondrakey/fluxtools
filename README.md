@@ -1,4 +1,4 @@
-# fluxtools v0.4.0
+# fluxtools v0.5.0
 
 Interactive **Shiny** application for exploration and QA/QC of eddy covariance data.  
 Streamlines post-processing of eddy covariance datasets (e.g., after EddyPro) to detect and remove outliers, enforce physical ranges, and generate reproducible R code for AmeriFlux submissions.
@@ -7,7 +7,7 @@ Streamlines post-processing of eddy covariance datasets (e.g., after EddyPro) to
 
 If you use **fluxtools** in your workflow, please cite:
 
-> Key, K. (2025). *fluxtools* (version 0.4.0) [Computer software]. Zenodo.  
+> Key, K. (2025). *fluxtools* (version 0.5.0) [Computer software]. Zenodo.  
 > https://doi.org/10.5281/zenodo.15597159
 
 ---

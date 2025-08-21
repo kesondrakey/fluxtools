@@ -1,6 +1,8 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
-^fluxtools\.Rproj$
-^LICENSE\.md$
 ^doc$
 ^Meta$
+^paper$
+^\.github$
+^inst/extdata/US-VT1_HH_202401010000_202501010000\.csv$
+^LICENSE.md$
