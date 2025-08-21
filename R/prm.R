@@ -427,12 +427,13 @@ apply_prm <- function(.data,
   summarize <- isTRUE(summarize)  # normalize flag
   rules <- .prm_rules()
 
-  # Always start with an empty tibble
-  summ <- tibble::tibble(
+  # --- Always start with an empty tibble
+  empty_tbl <- tibble::tibble(
     column = character(), family = character(),
     min = numeric(), max = numeric(),
     n_non_na_before = integer(), n_replaced = integer(), pct_replaced = numeric()
   )
+  summ <- empty_tbl
 
   if (!is.null(include)) {
     stopifnot(is.character(include))
@@ -480,7 +481,10 @@ apply_prm <- function(.data,
   }
 
   if (length(applied)) {
-    summ <- dplyr::bind_rows(applied) |>
+    # Avoid dplyr::bind_rows() NULL behavior; guard rbind
+    summ_df <- do.call(rbind, applied)
+    summ    <- tibble::as_tibble(summ_df)
+    summ <- summ |>
       dplyr::mutate(
         pct_replaced = ifelse(n_non_na_before > 0, 100 * n_replaced / n_non_na_before, 0)
       ) |>
@@ -488,20 +492,16 @@ apply_prm <- function(.data,
 
     if (all(summ$n_replaced == 0L)) {
       if (note) message("PRM: no replacements made.")
-      summ <- tibble::tibble(
-        column = character(), family = character(),
-        min = numeric(), max = numeric(),
-        n_non_na_before = integer(), n_replaced = integer(), pct_replaced = numeric()
-      )
+      # keep `summ` as the canonical EMPTY tibble
+      summ <- empty_tbl
     } else if (note) {
       u_vec  <- .prm_units()
-      base_u <- u_vec
-      names(base_u) <- sub("^\\^(.+)\\(\\$\\|_\\)$", "\\1", names(u_vec))
+      names(u_vec) <- sub("^\\^(.+)\\(\\$\\|_\\)$", "\\1", names(u_vec))
       fmt <- function(z) ifelse(is.na(z), "NA", as.character(z))
       lines <- mapply(function(col, fam, lo, hi, nrep, pct) {
         paste0(
           "* ", col, "\n",
-          "  expected units: ", base_u[[fam]], ", PRM range: ", fmt(lo), " to ", fmt(hi), "\n",
+          "  expected units: ", u_vec[[fam]], ", PRM range: ", fmt(lo), " to ", fmt(hi), "\n",
           "  ", nrep, " values set to NA (", sprintf("%.1f", pct), "% of data)"
         )
       }, summ$column, summ$family, summ$min, summ$max, summ$n_replaced, summ$pct_replaced,
@@ -510,12 +510,8 @@ apply_prm <- function(.data,
     }
   } else {
     # No matching columns at all
-    summ <- tibble::tibble(
-      column = character(), family = character(),
-      min = numeric(), max = numeric(),
-      n_non_na_before = integer(), n_replaced = integer(), pct_replaced = numeric()
-    )
     if (note) message("PRM: no replacements made.")
+    summ <- empty_tbl
   }
 
   # --- normalize summary type & return shape (ALWAYS a tibble)
@@ -539,7 +535,7 @@ apply_prm <- function(.data,
   if (!inherits(summ, "data.frame")) summ <- as.data.frame(summ, stringsAsFactors = FALSE)
   if (requireNamespace("tibble", quietly = TRUE)) summ <- tibble::as_tibble(summ)
 
-  if (!isTRUE(summarize)) return(.data)
+  if (!summarize) return(.data)
   list(data = .data, summary = summ)
 
 }
