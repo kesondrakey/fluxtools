@@ -131,7 +131,7 @@ test_that("no replacements -> informative message & empty summary", {
   msgs <- testthat::capture_messages(apply_prm(df, note = TRUE))
   msg  <- paste(msgs, collapse = "\n")
 
-  # 2) Get return value in a separate call
+  # 2) Get the return value in a separate call
   out <- apply_prm(df, note = TRUE)
 
   expect_true(grepl("no replacements made", msg, fixed = TRUE))
@@ -140,20 +140,6 @@ test_that("no replacements -> informative message & empty summary", {
 })
 
 
-
-test_that("no replacements -> informative message & empty summary", {
-  df  <- tibble::tibble(SWC_1_1_1 = c(0, 1, 50))
-
-  out <- NULL
-  msgs <- testthat::capture_messages({
-    out <<- apply_prm(df, note = TRUE)
-  })
-  msg <- paste(msgs, collapse = "\n")
-
-  expect_true(grepl("no replacements made", msg, fixed = TRUE))
-  expect_s3_class(out$summary, "tbl_df")
-  expect_equal(nrow(out$summary), 0)
-})
 
 
 

@@ -1,29 +1,9 @@
-#Goal: UTC offset inside the app
-#Add PRM functionality inside the app (able to see selected points when selected, toggle removal on or off)
-#PRM description and table inside the helper tool inside the (?)
-
-
 library(shiny)
 library(plotly)
 library(dplyr)
 library(bslib)     # for theming
 library(fluxtools)
 library(bslib)
-
-
-# #DEV ONLY
-# #doesnt work for PRM
-# # DEV ONLY: auto-load local fluxtools when running from its repo
-# if (interactive() && requireNamespace("pkgload", quietly = TRUE)) {
-#   desc_up1 <- file.path("..", "DESCRIPTION")
-#   if (file.exists(desc_up1)) {
-#     pkg <- tryCatch(read.dcf(desc_up1, "Package")[1, 1], error = function(e) NA_character_)
-#     if (identical(pkg, "fluxtools")) {
-#       try(pkgload::load_all("..", export_all = FALSE, helpers = TRUE, quiet = TRUE), silent = TRUE)
-#     }
-#   }
-# }
-# #END DEV ONLY
 
 # Allow larger uploads (here: up to 1gb)
 options(shiny.maxRequestSize = 1024 * 1024 * 1024) #1gb
@@ -38,8 +18,7 @@ light_theme <- bs_theme(
 
 dark_theme <- bs_theme(
   version        = 5,
-  #bootswatch     = "darkly",
-  bootswatch     = "slate", #Vapor, darkly
+  bootswatch     = "slate",
   base_font_size  = "18px",    # ← bump this up (default is 14px)
   font_scale      = 1.2,        # ← or scale everything to 120%
   fg             = "#EEE",
@@ -55,6 +34,16 @@ ui <- fluidPage(
   theme = light_theme,
 
   tags$head(
+    tags$style(HTML("
+  /* shrink tables inside modals + PRM help */
+  #help_prm_table, #prm_summary_tbl, .modal-body table {
+    font-size: 0.8rem;
+  }
+  /* wrap tables so they scroll instead of overflowing */
+  .table-wrap { max-width:100%; overflow-x:auto; }
+")),
+
+
     tags$style(HTML('
       h5 { font-weight: 600; letter-spacing: .2px; }
       .card { box-shadow: 0 .25rem .75rem rgba(0,0,0,.05); }
@@ -79,31 +68,18 @@ ui <- fluidPage(
       html[data-bs-theme="slate"] .accordion > .accordion-item { border-color:#444; box-shadow:0 .25rem .75rem rgba(0,0,0,.25); }
     ')),
 
-#     tags$style(HTML('
-#   /* Cerulean-sized tooltips */
-#   .tooltip.tt-compact {
-#     --bs-tooltip-bg: #111;
-#     --bs-tooltip-color: #fff;
-#     --bs-tooltip-opacity: 1;
-#     --bs-tooltip-padding-x: .50rem;
-#     --bs-tooltip-padding-y: .35rem;
-#     --bs-tooltip-border-radius: .375rem;
-#     --bs-tooltip-max-width: 260px;
-#     --bs-tooltip-box-shadow: 0 .25rem .75rem rgba(0,0,0,.15);
-#     --bs-tooltip-font-size: .8rem !important; /* <- same as Cerulean/Bootstrap sm */
-#     z-index: 1080;
-#   }
-#   .tooltip.tt-compact .tooltip-inner {
-#     font-size: var(--bs-tooltip-font-size) !important;
-#     line-height: 1.25;
-#     white-space: normal;
-#     max-width: 300px;
-#   }
-#   html[data-bs-theme="slate"] .tooltip.tt-compact {
-#     --bs-tooltip-bg: #1f1f1f;
-#     --bs-tooltip-color: #f3f3f3;
-#   }
-# ')),
+tags$script(HTML("
+document.addEventListener('keydown', function(e){
+  // when focus is inside the Selectize control for prm_families
+  var wrap = document.querySelector('#prm_families + .selectize-control');
+  if (!wrap) return;
+  var hasFocus = wrap.contains(document.activeElement);
+  if (hasFocus && e.key === 'Enter') {
+    var btn = document.getElementById('apply_prm_btn');
+    if (btn) btn.click();
+  }
+});
+")),
 
     tags$script(HTML("
 
@@ -343,6 +319,7 @@ ui <- fluidPage(
         id = "qa_sections",
         open = FALSE,
 
+#flag by range
         bslib::accordion_panel(
           title = tagList(icon("sliders-h"), "Flag by value range"),
           value = "range",
@@ -358,7 +335,7 @@ ui <- fluidPage(
 
 
 
-
+#flag by time
         bslib::accordion_panel(
           title = tagList(icon("clock"), "Flag by time"),
           value = "time",
@@ -377,61 +354,11 @@ ui <- fluidPage(
             ),
 
 
+
+#Select outliers
         bslib::accordion_panel(
-          title = tags$span(
-
-            class = "d-inline-flex align-items-center gap-2",
-            icon("sliders"),
-            tags$span(
-              HTML("Physical Range Module&nbsp;(PRM)"),
-              'data-bs-toggle'   = "tooltip",
-              'data-bs-placement' = "right",
-              title              = "Clamp variables to possible physical ranges; out-of-range → NA"
-            )
-          ),
-          value = "prm",
-
-          fluidRow(
-            column(
-              6,
-              actionButton(
-                "apply_prm_btn", "Apply PRM",
-                width = "100%", icon = icon("sliders-h"),
-                'data-bs-toggle'="tooltip",
-                title="Clamp to PRM bounds; out-of-range set to NA. Reversible."
-              )
-            ),
-            column(
-              6,
-              actionButton(
-                "undo_prm_btn", "Undo PRM",
-                width = "100%", icon = icon("undo"),
-                'data-bs-toggle'="tooltip",
-                title="Reverts only values changed by the last PRM apply. Other edits unaffected."
-              )
-            )
-          ),
-
-
-          tags$details(
-            tags$summary("PRM options"),
-            tagAppendAttributes(
-              selectizeInput(
-                "prm_families", "Variables (optional):",
-                choices = NULL, multiple = TRUE,
-                options  = list(
-                  placeholder = "Default: All relevant variables matched by PRM",
-                  plugins = list("remove_button")
-                )
-              ),
-              'data-bs-toggle'="tooltip",
-              title="Type base names like SWC, P, TA, CO2 (we match columns by name prefix, e.g. ^SWC($|_)). Leave empty to apply to all"
-            )
-          )
-        ),
-
-        bslib::accordion_panel(
-          title = tagList(icon("bullseye"), "Select outliers"),
+          title = tagList(icon("wave-square"), "Select outliers"),
+          #title = tagList(icon("bullseye"), "Select outliers"),
           value = "outliers",
           tags$h5("Select outliers"),
           sliderInput("sd_thresh", "Highlight points beyond σ:", min = 0, max = 3, value = 0, step = 1),
@@ -456,6 +383,69 @@ ui <- fluidPage(
           )
         ),
 
+
+#prm module
+bslib::accordion_panel(
+  title = tags$span(
+
+    class = "d-inline-flex align-items-center gap-2",
+    icon("seedling"),  # far = Font Awesome Regular
+    #icon("sliders"),
+    tags$span(
+      HTML("Physical Range Module&nbsp;(PRM)"),
+      'data-bs-toggle'   = "tooltip",
+      'data-bs-placement' = "right",
+      title              = "Clamp variables to possible physical ranges; out-of-range → NA"
+    )
+  ),
+  value = "prm",
+
+  fluidRow(
+    column(
+      6,
+      actionButton(
+        "apply_prm_btn", "Apply PRM",
+        width = "100%", icon = icon("sliders-h"),
+        'data-bs-toggle'="tooltip",
+        title="Clamp to PRM bounds; out-of-range set to NA. Reversible."
+      )
+    ),
+    column(
+      6,
+      actionButton(
+        "undo_prm_btn", "Undo PRM",
+        width = "100%", icon = icon("undo"),
+        'data-bs-toggle'="tooltip",
+        title="Reverts only values changed by the last PRM apply. Other edits unaffected."
+      )
+    )
+  ),
+
+
+  tags$details(
+    tags$summary("PRM options"),
+    tagAppendAttributes(
+      selectizeInput(
+        "prm_families", "Variables (optional):",
+        choices = NULL, multiple = TRUE,
+        options = list(
+          placeholder = "Default: All relevant variables matched by PRM",
+          plugins = list("remove_button")
+        )
+      ),
+      'data-bs-toggle'="tooltip",
+      title="Type base names like SWC, P, TA, CO2 (we match columns by name prefix, e.g. ^SWC($|_)). Leave empty to apply to all"
+    ),
+    div(class="d-grid gap-2 mt-2",
+        actionButton("apply_prm_subset", "Apply PRM to selected", icon = icon("play"))
+    )
+  )
+
+),
+
+
+
+#code generation
         bslib::accordion_panel(
           title = tagList(icon("code"), "Code generation"),
           value = "code",
@@ -571,7 +561,8 @@ server <- function(input, output, session) {
     df_before_prm = NULL,
     prm_active = FALSE,
     prm_summary = NULL,
-    prm_mask = NULL
+    prm_mask = NULL,
+    prm_include = NULL   # <- add this
   )
 
   last_sel <- reactiveValues(x = NULL, y = NULL)
@@ -590,12 +581,18 @@ server <- function(input, output, session) {
     rec <- data_tz()
 
     paste0(
-      "First row:\n",
-      "  raw:                   ", df$raw_ts[1], "\n",
-      sprintf("  recorded clock (UTC%+d): %s\n", off,
+      "TIMESTAMP_START details:\n",
+      "  raw value (as stored):   ", df$raw_ts[1], "\n",
+      sprintf("  displayed (UTC%+d):       %s\n", off,
               format(df$TIMESTAMP_START[1] + off*3600, "%Y-%m-%d %H:%M %Z", tz = rec)),
-      "  absolute UTC:          ", format(df$TIMESTAMP_START[1], "%Y-%m-%d %H:%M %Z", tz = "UTC")
+      "  absolute UTC reference:  ", format(df$TIMESTAMP_START[1], "%Y-%m-%d %H:%M %Z", tz = "UTC"),
+      "\n\nNote (display only):\n",
+      sprintf("- Viewing times with a fixed UTC offset of UTC%+d (%s); daylight saving time is not applied\n", off, rec),
+      "- This setting affects how times are shown in the app only\n",
+      "- Selections, removals, and exports are keyed to the original TIMESTAMP_START string; underlying values are unchanged\n",
+      "- Exported files preserve the original timestamp column from the input\n"
     )
+
   })
 
 
@@ -791,6 +788,58 @@ server <- function(input, output, session) {
   })
 
   #PRM Server
+  observeEvent(input$apply_prm_subset, {
+    req(rv$df)
+
+
+    if (isTRUE(rv$prm_active)) {
+      showNotification("PRM already applied. Use “Undo PRM” to revert", type="message"); return()
+    }
+
+    fam <- input$prm_families
+    if (!length(fam)) {
+      showNotification("No variables selected. Using all PRM families present.", type="message")
+    }
+
+    rv$prm_include <- if (length(fam)) fam else NULL
+
+    before <- rv$df
+    res <- try(apply_prm_safe(before, include = if (length(fam)) fam else NULL), silent = TRUE)
+    if (inherits(res, "try-error")) {
+      showNotification("PRM function not available. Update or load 'fluxtools'.", type="error", duration=6); return()
+    }
+
+    after <- res$data
+
+    # Build mask & set state (same as your apply_prm_btn handler)
+    mask <- list(); common <- intersect(names(before), names(after))
+    for (nm in common) {
+      if (!is.numeric(before[[nm]]) || !is.numeric(after[[nm]])) next
+      idx <- which(!is.na(before[[nm]]) & is.na(after[[nm]]))
+      if (length(idx)) mask[[nm]] <- data.frame(.row = before$.row[idx], old = before[[nm]][idx])
+    }
+
+    rv$df <- after
+    rv$prm_summary <- res$summary
+    rv$prm_mask <- mask
+    rv$prm_active <- TRUE
+
+    ncols <- if (nrow(res$summary)) length(unique(res$summary$column)) else 0L
+    nrep  <- if (nrow(res$summary)) sum(res$summary$n_replaced, na.rm = TRUE) else 0L
+    showNotification(sprintf("PRM applied: %d columns checked, %d values set to NA.", ncols, nrep),
+                     type="message", duration=4)
+
+    showModal(modalDialog(
+      title = "PRM summary",
+      tagList(
+        tags$p("Expected units and PRM bounds are shown per column. Out-of-range values were set to NA."),
+        tableOutput("prm_summary_tbl")
+      ),
+      size = "l", easyClose = TRUE
+    ))
+  })
+
+
   #PRM help table
   output$help_prm_table <- renderTable({
     rules <- get_rules()
@@ -800,8 +849,34 @@ server <- function(input, output, session) {
         Example = "library(fluxtools); get_prm_rules()"
       ))
     }
-    rules[, c("variable","description","units","min","max")]
+
+    # If PRM applied, show per-column summary; else the static rule table
+    if (!is.null(rv$prm_summary)) {
+      s <- rv$prm_summary
+      s$pct_replaced <- round(s$pct_replaced, 1)
+      want <- c("column","family","units","min","max","n_replaced","pct_replaced")
+      s[, intersect(want, names(s)), drop = FALSE]
+    } else {
+      want <- c("variable","description","units","min","max")
+      rules[, intersect(want, names(rules)), drop = FALSE]
+    }
   })
+
+  output$prm_summary_tbl <- renderTable({
+    s <- rv$prm_summary; req(s)
+    rules <- get_rules()
+    if (!is.null(rules) && all(c("variable","units") %in% names(rules))) {
+      u_map <- setNames(rules$units, rules$variable)
+      s$units <- unname(u_map[s$family])
+    } else {
+      s$units <- NA_character_
+    }
+    s$pct_replaced <- round(s$pct_replaced, 1)
+    want <- c("column","family","units","min","max","n_replaced","pct_replaced")
+    s[, intersect(want, names(s)), drop = FALSE]
+  })
+
+
 
   #prm reactive values
   rv$prm_active     <- FALSE
@@ -873,6 +948,13 @@ server <- function(input, output, session) {
   })
 
     #Prm
+  # server()
+  observe({
+    fam <- input$prm_families
+    lab <- if (length(fam)) sprintf("Apply PRM (%d selected)", length(fam)) else "Apply PRM (all)"
+  updateActionButton(session, "apply_prm_btn", label = lab)
+  })
+
     # PRM family choices present in the data
     # PRM variable choices present in the uploaded data
   # Put this somewhere in server() AFTER rv$df exists:
@@ -972,12 +1054,15 @@ server <- function(input, output, session) {
 
   observeEvent(input$apply_prm_btn, {
     req(rv$df)
+
+
     if (isTRUE(rv$prm_active)) {
       showNotification("PRM already applied. Use “Undo PRM” to revert", type="message")
       return()
     }
     before <- rv$df
     fam    <- input$prm_families
+    rv$prm_include <- if (length(fam)) fam else NULL
 
     res <- try(apply_prm_safe(before, include = if (length(fam)) fam else NULL), silent = TRUE)
     if (inherits(res, "try-error")) {
@@ -1014,11 +1099,11 @@ server <- function(input, output, session) {
       title = "PRM summary",
       tagList(
         tags$p("Expected units and PRM bounds are shown per column. Out-of-range values were set to NA."),
-        tableOutput("prm_summary_tbl")
+        div(class = "table-wrap", tableOutput("prm_summary_tbl"))
       ),
-      size = "l",
-      easyClose = TRUE
+      size = "l", easyClose = TRUE
     ))
+
   })
 
   observeEvent(input$undo_prm_btn, {
@@ -1039,6 +1124,8 @@ server <- function(input, output, session) {
     rv$prm_mask <- NULL
     rv$prm_summary <- NULL
     rv$prm_active <- FALSE
+    rv$prm_include <- NULL
+
     showNotification("Undid PRM-only changes.", type = "message", duration = 3)
   })
 
@@ -1259,7 +1346,8 @@ server <- function(input, output, session) {
               tags$li(tags$b("Variables:"), " optionally limit PRM to specific variable groups (e.g., SWC, P, TA, CO2)")
             ),
             tags$h5("PRM bounds"),
-            tableOutput("help_prm_table")
+            div(class = "table-wrap", tableOutput("help_prm_table"))
+
           )
         ),
 
@@ -1622,32 +1710,6 @@ server <- function(input, output, session) {
     paste(unlist(snippets), collapse = "\n\n")
   })
 
-#   output$code_all <- renderText({
-#     #all_removals <- reactiveValuesToList(removed_ts)
-#     all_removals <- all_removals[vapply(all_removals, length, FUN.VALUE = integer(1)) > 0]
-#     if (length(all_removals) == 0) {
-#       return("
-#
-# <!-- click “Flag Data” or “Add all ±σ outliers” → see code here -->
-#
-# ")
-#     }
-#     snippets <- lapply(names(all_removals), function(var) {
-#       ts    <- all_removals[[var]]
-#       conds <- paste0("TIMESTAMP_START == '", ts, "' ~ NA_real_", collapse = ",\n      ")
-#       paste0(
-#         "df <- df %>%\n",
-#         "  mutate(\n",
-#         "    ", var, " = case_when(\n",
-#         "      ", conds, ",\n",
-#         "      TRUE ~ ", var, "\n",
-#         "    )\n",
-#         "  )"
-#       )
-#     })
-#     paste(unlist(snippets), collapse = "\n\n")
-#   })
-
   # ────────────────────────────────────────────────────────────────────────────
   # Removed‐points code snippet (only those Confirm Removed)
   # ────────────────────────────────────────────────────────────────────────────
@@ -1761,60 +1823,158 @@ server <- function(input, output, session) {
   # DOWNLOAD HANDLER for “Download cleaned CSV”
   # ────────────────────────────────────────────────────────────────────────────
   output$download_data <- downloadHandler(
-    filename = function() {
-      paste0("flux_cleaned_", Sys.Date(), ".zip")
-    },
+    filename = function() paste0("fluxtools_", Sys.Date(), ".zip"),
     content = function(zipfile) {
-      # 1) Create a brand-new temp directory
-      tmpdir <- tempfile("flux_clean_")
-      dir.create(tmpdir)
+      tmpdir <- tempfile("fluxtools_"); dir.create(tmpdir)
 
-      # 2) Write the cleaned CSV with the exact name you want
-      csv_name <- paste0("flux_cleaned_", Sys.Date(), ".csv")
+      # 0) ORIGINAL input (what the scripts will read)
+      orig_path <- file.path(tmpdir, "raw_df.csv")
+      write.csv(raw_df(), orig_path, row.names = FALSE, na = "NA")
+
+      # 1) CLEANED CSV reflecting in-app removals
+      csv_name <- paste0("fluxtools_processed_df_", Sys.Date(), ".csv")
       csv_path <- file.path(tmpdir, csv_name)
 
       base_df <- raw_df()
       helper  <- df_by_year()
       for (col in setdiff(names(base_df), "TIMESTAMP_START")) {
-        if (col %in% names(helper)) {
-          base_df[[col]] <- helper[[col]]
-        }
+        if (col %in% names(helper)) base_df[[col]] <- helper[[col]]
       }
       write.csv(base_df, csv_path, row.names = FALSE, na = "NA")
 
-      # 3) Write the removal script under the exact name you want
-      script_name <- "flux_remove_script.R"
+      # 2) Main manual-removal script
+      script_name <- "fluxtools_removal_script.R"
       script_path <- file.path(tmpdir, script_name)
 
       cfs <- reactiveValuesToList(confirmed_ts)
-      cfs <- cfs[vapply(cfs, length, FUN.VALUE=0L) > 0]
+      cfs <- cfs[vapply(cfs, length, FUN.VALUE = integer(1)) > 0]
+
+      extra_files <- c(orig_path, csv_path, script_path)
+
+      # 3) Include PRM summary if present
+      if (isTRUE(rv$prm_active) && !is.null(rv$prm_summary)) {
+        prm_csv <- file.path(tmpdir, "prm_summary.csv")
+        write.csv(rv$prm_summary, prm_csv, row.names = FALSE, na = "NA")
+        extra_files <- c(extra_files, prm_csv)
+      }
+
+      # 4) Write the main script (fix: read raw_df.csv)
       lines <- c(
-        "## Auto-generated removal script",
-        "library(dplyr)",
-        "df <- read.csv('flux_original.csv', stringsAsFactors=FALSE)",
+        "## Auto-generated QA/QC script",
+        "suppressPackageStartupMessages({",
+        "  library(dplyr)",
+        "})",
+        "df <- read.csv('raw_df.csv', stringsAsFactors = FALSE)",
         ""
       )
-      for (var in names(cfs)) {
-        tses  <- cfs[[var]]
-        conds <- paste0("TIMESTAMP_START == '", tses, "' ~ NA_real_", collapse=",\n  ")
-        lines <- c(lines,
-                   sprintf("## remove for %s", var),
-                   "df <- df %>%",
-                   sprintf("  mutate(%s = case_when(\n  %s,\n  TRUE ~ %s\n))", var, conds, var),
-                   ""
+
+      if (isTRUE(rv$prm_active)) {
+        include_vec <- rv$prm_include
+        include_txt <- if (is.null(include_vec)) "NULL" else paste0("c(", paste(sprintf("'%s'", include_vec), collapse = ", "), ")")
+        lines <- c(
+          lines,
+          "## --- Physical Range Module (PRM) -------------------------------------",
+          "## NOTE:",
+          "## The file 'manual_prm_removal.R' is provided separately to replicate",
+          "## the exact cell-level NA removals from PRM during your session.",
+          "## Use that script if you want to replay the precise mask.",
+          "",
+          "## This replays the PRM used in the app. If 'fluxtools' is not installed, this block is skipped.",
+          "if (requireNamespace('fluxtools', quietly = TRUE)) {",
+          sprintf("  res <- try(fluxtools::apply_prm(df, include = %s, note = FALSE, summarize = TRUE), silent = TRUE)", include_txt),
+          "  if (!inherits(res, 'try-error')) {",
+          "    df <- res$data",
+          "    try(utils::write.csv(res$summary, 'prm_summary.csv', row.names = FALSE), silent = TRUE)",
+          "  }",
+          "} else {",
+          "  message('fluxtools not installed; PRM step skipped.')",
+          "}",
+          ""
         )
       }
-      lines <- c(lines,
-                 "write.csv(df, 'flux_cleaned.csv', row.names=FALSE, na='NA')"
-      )
+
+      if (length(cfs)) {
+        for (var in names(cfs)) {
+          tses  <- cfs[[var]]
+          conds <- paste0("TIMESTAMP_START == '", tses, "' ~ NA_real_", collapse = ",\n    ")
+          lines <- c(
+            lines,
+            "## --- Manually Selected Data Turned NA -------------------------------------",
+            sprintf("## remove for %s", var),
+            "df <- df %>%",
+            sprintf("  mutate(%s = dplyr::case_when(\n    %s,\n    TRUE ~ %s\n  ))", var, conds, var),
+            ""
+          )
+        }
+      } else {
+        lines <- c(lines, "## (No manual removals were confirmed in the app)", "")
+      }
+
+      lines <- c(lines, "write.csv(df, 'fluxtools_processed.csv', row.names = FALSE, na = 'NA')")
       writeLines(lines, script_path)
 
-      # 4) Zip them up, stripping off the tempdir path so only the basenames appear
-      utils::zip(zipfile,
-                 files = c(csv_path, script_path),
-                 flags = "-j")
+      # 5) PRM audit → wide + long + manual replay script
+      if (isTRUE(rv$prm_active) && !is.null(rv$prm_mask)) {
+        removed_list <- lapply(names(rv$prm_mask), function(nm) {
+          df_rows <- rv$prm_mask[[nm]]
+          if (is.null(df_rows) || nrow(df_rows) == 0) return(NULL)
+          ts_vec <- rv$df$ts_str[ match(df_rows$.row, rv$df$.row) ]
+          data.frame(
+            TIMESTAMP_START = ts_vec,
+            column          = nm,
+            original_value  = df_rows$old,
+            stringsAsFactors = FALSE
+          )
+        })
+        removed_df <- do.call(rbind, removed_list)
+
+        if (!is.null(removed_df) && nrow(removed_df) > 0) {
+          # Wide (requested): each variable becomes its own column
+          removed_wide <- tidyr::pivot_wider(
+            removed_df,
+            id_cols    = TIMESTAMP_START,
+            names_from = column,
+            values_from = original_value,
+            values_fn   = list(original_value = function(x) paste(unique(x), collapse = "; "))
+          )
+          prm_removed_csv_wide <- file.path(tmpdir, "prm_removed_values.csv")
+          write.csv(removed_wide, prm_removed_csv_wide, row.names = FALSE, na = "NA")
+
+          manual_script <- file.path(tmpdir, "manual_prm_removed.R")
+          lines_manual <- c(
+            "## Manual PRM removal (exact cells set to NA by PRM in the app)",
+            "suppressPackageStartupMessages({ library(dplyr) })",
+            "df <- read.csv('raw_df.csv', stringsAsFactors = FALSE)"
+          )
+          by_col <- split(removed_df, removed_df$column)
+          for (nm in names(by_col)) {
+            tses <- unique(by_col[[nm]]$TIMESTAMP_START)
+            if (!length(tses)) next
+            conds <- paste0("TIMESTAMP_START == '", tses, "' ~ NA_real_", collapse = ",\n    ")
+            lines_manual <- c(
+              lines_manual,
+              sprintf("## PRM-removed cells for %s", nm),
+              "df <- df %>%",
+              sprintf("  mutate(%s = dplyr::case_when(\n    %s,\n    TRUE ~ %s\n  ))", nm, conds, nm),
+              ""
+            )
+          }
+          lines_manual <- c(lines_manual,
+                            "write.csv(df, 'prm_manual_removal.csv', row.names = FALSE, na = 'NA')")
+          writeLines(lines_manual, manual_script)
+
+          extra_files <- c(extra_files, prm_removed_csv_wide, manual_script)
+        }
+      }
+
+      # 6) Zip everything
+      utils::zip(zipfile, files = extra_files, flags = "-j")
     }
   )
+
+
+
+
 
 
   #Unflag Data button logic
