@@ -444,7 +444,6 @@ apply_prm <- function(.data,
 
   before  <- .data
   applied <- list()
-  summ    <- NULL              # <-- ensure it exists
 
   for (pat in names(rules)) {
     lim   <- rules[[pat]]
