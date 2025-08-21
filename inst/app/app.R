@@ -1287,9 +1287,9 @@ server <- function(input, output, session) {
             tags$ul(
               tags$h4("1. Upload & Choose Variables"),
               tags$ul(
-                tags$li(tags$b("Upload")," your AmeriFlux CSV (≤ 100 MB; multi-year enabled)"),
+                tags$li(tags$b("Upload")," your AmeriFlux CSV (≤ 1 GB; multi-year enabled)"),
                 tags$li(tags$b("X-axis:"),"Defaults to TIMESTAMP_START (e.g., 'YYYYMMDDHHMM', such as '201507281700'); you can switch to any numeric variable"),
-                tags$li(tags$b("Time Note:")," TIMESTAMP_START is parsed into POSIXct in your local TZ so you see familiar clock times (e.g. 14:00), but the generated code always uses the original 'YYYYMMDDHHMM' string to avoid ambiguity"),
+                tags$li(tags$b("Time Note:")," TIMESTAMP_START is parsed into POSIXct in user-selected UCT offset so you see familiar clock times (e.g. 14:00), but the generated code always uses the original 'YYYYMMDDHHMM' string to avoid ambiguity"),
                 tags$li(tags$b("Y-axis:")," The variable you want to remove (i.e. FC_1_1_1)"),
                 tags$li(tags$b("Year filter")," select one or more years to scope your QA/QC (defaults to all)"),
                 tags$li(tags$b("Theme")," toggle light/dark mode via the switch at the bottom left")
@@ -1875,7 +1875,7 @@ server <- function(input, output, session) {
           lines,
           "## --- Physical Range Module (PRM) -------------------------------------",
           "## NOTE:",
-          "## The file 'manual_prm_removal.R' is provided separately to replicate",
+          "## The file 'manual_prm_removed.R' is provided separately to replicate",
           "## the exact cell-level NA removals from PRM during your session.",
           "## Use that script if you want to replay the precise mask.",
           "",
