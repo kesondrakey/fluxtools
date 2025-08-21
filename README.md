@@ -70,5 +70,5 @@ devtools::install_github("kesondrakey/fluxtools")
 #Load fluxtools and launch the QA/QC application:
 library(fluxtools)
 
-# Add the UTC offset for your flux tower site (e.g., UTC-5 for EST)
-run_flux_qaqc(-5)
+# run the app
+run_fluxtools()

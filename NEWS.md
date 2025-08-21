@@ -4,6 +4,6 @@
 
 * First CRAN release:  
   - Added Shiny app under inst/app/  
-  - run_flux_qaqc(offset) function to launch the app  
+  - run_fluxtools() function to launch the app  
   - Basic QA/QC filtering, code-generator for removal  
   - README, examples

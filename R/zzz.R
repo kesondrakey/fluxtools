@@ -5,8 +5,8 @@
   packageStartupMessage("Welcome to fluxtools!")
   packageStartupMessage("Version: ", version)
 
-  packageStartupMessage("\nTo start the app, use 'run_flux_qaqc(offset)', where 'offset' is your UTC time offset:")
-  packageStartupMessage("run_flux_qaqc(-5) #for Eastern Time (UTC-5)")
+  packageStartupMessage("\nTo start the app:")
+  packageStartupMessage("run_fluxtools()")
 
   packageStartupMessage("\nApply Physical Range Module filters:")
   packageStartupMessage("apply_prm(df) #Turn data that does not make sense in the physical world to NA (source: Ameriflux Technical Documents)")

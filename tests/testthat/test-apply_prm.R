@@ -30,17 +30,6 @@ test_that("summarize = FALSE returns data.frame", {
 })
 
 
-test_that("message includes units and PRM range", {
-  df <- tibble::tibble(
-    SWC_1_1_1 = c(10, 101, 50, -3),
-    P         = c(0, 60, 10, -1)
-  )
-  # Use expect_message to test the message text directly
-  expect_message(apply_prm(df, note = TRUE),
-                 "expected units: %, PRM range: 0 to 100")
-  expect_message(apply_prm(df, note = TRUE),
-                 "expected units: mm, PRM range: 0 to 50")
-})
 
 
 test_that("apply_prm basic clamping + QC untouched", {
@@ -122,32 +111,52 @@ test_that("message includes units and PRM range", {
     SWC_1_1_1 = c(10, 101, 50, -3),
     P         = c(0, 60, 10, -1)
   )
-  msg <- paste(
-    capture.output(apply_prm(df, note = TRUE), type = "message"),
-    collapse = "\n"
-  )
+
+  # 1) Capture messages
+  msgs <- testthat::capture_messages(apply_prm(df, note = TRUE))
+  msg  <- paste(msgs, collapse = "\n")
+
+  # 2) Get return value in a separate call
+  out <- apply_prm(df, note = TRUE)
+
   expect_match(msg, "expected units: %, PRM range: 0 to 100", fixed = TRUE)
   expect_match(msg, "expected units: mm, PRM range: 0 to 50", fixed = TRUE)
+  expect_s3_class(out$summary, "tbl_df")   # sanity check return shape
 })
 
-
 test_that("no replacements -> informative message & empty summary", {
-  df  <- tibble::tibble(SWC_1_1_1 = c(0, 1, 50))
-  out <- NULL
+  df <- tibble::tibble(SWC_1_1_1 = c(0, 1, 50))
 
-  # Capture messages explicitly
-  msg <- paste(
-    capture.output(
-      out <- apply_prm(df, note = TRUE),
-      type = "message"
-    ),
-    collapse = "\n"
-  )
+  # 1) Capture messages
+  msgs <- testthat::capture_messages(apply_prm(df, note = TRUE))
+  msg  <- paste(msgs, collapse = "\n")
+
+  # 2) Get return value in a separate call
+  out <- apply_prm(df, note = TRUE)
 
   expect_true(grepl("no replacements made", msg, fixed = TRUE))
   expect_s3_class(out$summary, "tbl_df")
   expect_equal(nrow(out$summary), 0)
 })
+
+
+
+test_that("no replacements -> informative message & empty summary", {
+  df  <- tibble::tibble(SWC_1_1_1 = c(0, 1, 50))
+
+  out <- NULL
+  msgs <- testthat::capture_messages({
+    out <<- apply_prm(df, note = TRUE)
+  })
+  msg <- paste(msgs, collapse = "\n")
+
+  expect_true(grepl("no replacements made", msg, fixed = TRUE))
+  expect_s3_class(out$summary, "tbl_df")
+  expect_equal(nrow(out$summary), 0)
+})
+
+
+
 
 test_that("non data.frame input errors clearly", {
   expect_error(apply_prm(1:5), "is.data.frame\\(.data\\) is not TRUE")

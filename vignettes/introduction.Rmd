@@ -48,8 +48,8 @@ Load **fluxtools** and launch the QA/QC application:
 ```r
 library(fluxtools)
 
-# Add the UTC offset for your flux tower site (e.g., UTC-5 for EST)
-run_flux_qaqc(-5)
+# Run the app
+run_fluxtools()
 ```
 
 
@@ -160,7 +160,6 @@ df_filtered_swc_P <- apply_prm(df, include = c("SWC", "P"))
 ```{r prm-rules-table, echo=FALSE, message=FALSE}
 library(dplyr)
 library(knitr)
-library(kableExtra)
 
 rules_tbl <- get_prm_rules() |>
   transmute(
@@ -179,11 +178,21 @@ note_txt <- if (knitr::is_latex_output()) {
   "<em>Source: AmeriFlux Technical Documents</em>"
 }
 
-kbl(rules_tbl,
-    caption = "Physical Range Module (PRM) bounds",
-    booktabs = TRUE, escape = FALSE) |>
-  kable_styling(full_width = FALSE, latex_options = c("threeparttable")) |>
-  footnote(general = note_txt, general_title = "", escape = FALSE)
+use_kableExtra <- requireNamespace("kableExtra", quietly = TRUE)
+tbl <- fluxtools::get_prm_rules()
+if (use_kableExtra) {
+  kableExtra::kbl(tbl, booktabs = TRUE) |>
+    kableExtra::kable_styling(full_width = FALSE)
+} else {
+  knitr::kable(tbl)
+}
+
+
+# kbl(rules_tbl,
+#     caption = "Physical Range Module (PRM) bounds",
+#     booktabs = TRUE, escape = FALSE) |>
+#   kable_styling(full_width = FALSE, latex_options = c("threeparttable")) |>
+#   footnote(general = note_txt, general_title = "", escape = FALSE)
 
 ```
 

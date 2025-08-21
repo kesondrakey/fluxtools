@@ -2,7 +2,7 @@
 
 export(apply_prm)
 export(get_prm_rules)
-export(run_flux_qaqc)
+export(run_fluxtools)
 importFrom(dplyr,filter)
 importFrom(dplyr,mutate)
 importFrom(dplyr,pull)

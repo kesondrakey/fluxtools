@@ -1,12 +1,32 @@
+#Goal: UTC offset inside the app
+#Add PRM functionality inside the app (able to see selected points when selected, toggle removal on or off)
+#PRM description and table inside the helper tool inside the (?)
+
+
 library(shiny)
 library(plotly)
 library(dplyr)
-library(shinyBS)   # for bsTooltip()
 library(bslib)     # for theming
+library(fluxtools)
+library(bslib)
+
+
+# #DEV ONLY
+# #doesnt work for PRM
+# # DEV ONLY: auto-load local fluxtools when running from its repo
+# if (interactive() && requireNamespace("pkgload", quietly = TRUE)) {
+#   desc_up1 <- file.path("..", "DESCRIPTION")
+#   if (file.exists(desc_up1)) {
+#     pkg <- tryCatch(read.dcf(desc_up1, "Package")[1, 1], error = function(e) NA_character_)
+#     if (identical(pkg, "fluxtools")) {
+#       try(pkgload::load_all("..", export_all = FALSE, helpers = TRUE, quiet = TRUE), silent = TRUE)
+#     }
+#   }
+# }
+# #END DEV ONLY
 
 # Allow larger uploads (here: up to 1gb)
 options(shiny.maxRequestSize = 1024 * 1024 * 1024) #1gb
-
 
 ## ── 1) Theme ───────────────────────────────────────────────────────
 light_theme <- bs_theme(
@@ -19,234 +39,460 @@ light_theme <- bs_theme(
 dark_theme <- bs_theme(
   version        = 5,
   #bootswatch     = "darkly",
-  bootswatch     = "slate",
+  bootswatch     = "slate", #Vapor, darkly
   base_font_size  = "18px",    # ← bump this up (default is 14px)
   font_scale      = 1.2,        # ← or scale everything to 120%
   fg             = "#EEE",
   bg             = "#222",
   input_bg       = "#333",
   input_fg       = "#EEE"#,
-  #
-  #   # override the form‐select CSS vars:
-  #   "form-select-color"         = "#EEE",
-  #   "form-select-bg"            = "#333",
-  #   "form-select-border-color"  = "#555",
-  #
-  #   # override form‐control CSS vars:
-  #   "form-control-color"        = "#EEE",
-  #   "form-control-bg"           = "#333",
-  #   "form-control-border-color" = "#555"
 )
 
 
-ui <- fluidPage(
-  # lock the page to the height of the browser window,
-  # and stop it from ever scrolling
-  style = "height:100vh; overflow:hidden;",
-  #default theme
-  theme = light_theme,   # ← important!
 
-  # client‐side handler for copying text
+ui <- fluidPage(
+  style = "height:100vh; overflow:hidden;",
+  theme = light_theme,
+
   tags$head(
     tags$style(HTML('
-        html[data-bs-theme="slate"] {
-          /* form controls (text inputs, selects, textareas) */
-          --bs-form-control-bg:           #333 !important;
-          --bs-form-control-color:        #EEE !important;
-          --bs-form-control-border-color: #555 !important;
-          /* <select> dropdowns */
-          --bs-form-select-bg:            #333 !important;
-          --bs-form-select-color:         #EEE !important;
-          --bs-form-select-border-color:  #555 !important;
-        }
-       /* x) Put the copy button back in place */
-      .copy-button-col {
-        display: flex !important;
-        justify-content: flex-end !important;
-        align-items: center !important;
-        padding-left: 0 !important;
-        padding-right: 1rem !important;
+      h5 { font-weight: 600; letter-spacing: .2px; }
+      .card { box-shadow: 0 .25rem .75rem rgba(0,0,0,.05); }
+      pre.codebox { margin:0; padding:12px; background: var(--bs-dark-bg-subtle, #f8f9fa);
+        border-radius: 10px; border: 1px solid #e5e7eb; font-size: .92rem; }
+      .d-grid.gap-2 > .btn { padding:.5rem .75rem; }
+      .tz-pill { display:block; width:100%; padding:.375rem .75rem; border:1px solid var(--bs-border-color);
+        border-radius:.375rem; background:var(--bs-body-bg); box-shadow:0 1px 2px rgba(0,0,0,.04); font-size:.95rem; }
+      .tz-pill i { opacity:.7; margin-right:.5rem; }
+      .tz-suffix { margin-left:.35rem; opacity:.8; }
+      html[data-bs-theme="slate"] {
+        --bs-form-control-bg:#333 !important; --bs-form-control-color:#EEE !important; --bs-form-control-border-color:#555 !important;
+        --bs-form-select-bg:#333 !important;  --bs-form-select-color:#EEE !important;  --bs-form-select-border-color:#555 !important;
       }
-  ')),
-    tags$script(HTML("
-    function copyVisibleCode(){
-      var which = document.querySelector('input[name=code_choice]:checked').value;
-      var srcId = which==='current' ? 'code_current' : 'code_all';
-      var ta    = document.createElement('textarea');
-      ta.value  = document.getElementById(srcId).innerText;
-      ta.readOnly = true;
-      ta.style.position = 'absolute'; ta.style.left = '-9999px';
-      document.body.appendChild(ta);
-      ta.select(); document.execCommand('copy');
-      document.body.removeChild(ta);
-      Shiny.setInputValue('did_copy_code', Math.random());
-    }
-    document.addEventListener('shiny:connected', function(){
-      var btn = document.getElementById('copy_code_btn');
-      if(btn) btn.onclick = copyVisibleCode;
-    });
-  "))
-  ),
+      .copy-button-col { display:flex !important; justify-content:flex-end !important; align-items:center !important;
+        padding-left:0 !important; padding-right:1rem !important; }
+      .accordion > .accordion-item { border:1px solid var(--bs-border-color); border-radius: var(--bs-border-radius-lg, .75rem);
+        box-shadow:0 .25rem .75rem rgba(0,0,0,.05); overflow:hidden; margin-bottom:.75rem; }
+      .accordion-button { font-weight:600; letter-spacing:.2px; padding:.75rem 1rem; }
+      .accordion-button .fa, .accordion-button .bi { margin-right:.5rem; }
+      .accordion-body { background: var(--bs-body-bg); padding: 1rem 1.25rem; }
+      html[data-bs-theme="slate"] .accordion > .accordion-item { border-color:#444; box-shadow:0 .25rem .75rem rgba(0,0,0,.25); }
+    ')),
 
-  ## ── 2) Title + help link ───────────────────────────────────────────
+#     tags$style(HTML('
+#   /* Cerulean-sized tooltips */
+#   .tooltip.tt-compact {
+#     --bs-tooltip-bg: #111;
+#     --bs-tooltip-color: #fff;
+#     --bs-tooltip-opacity: 1;
+#     --bs-tooltip-padding-x: .50rem;
+#     --bs-tooltip-padding-y: .35rem;
+#     --bs-tooltip-border-radius: .375rem;
+#     --bs-tooltip-max-width: 260px;
+#     --bs-tooltip-box-shadow: 0 .25rem .75rem rgba(0,0,0,.15);
+#     --bs-tooltip-font-size: .8rem !important; /* <- same as Cerulean/Bootstrap sm */
+#     z-index: 1080;
+#   }
+#   .tooltip.tt-compact .tooltip-inner {
+#     font-size: var(--bs-tooltip-font-size) !important;
+#     line-height: 1.25;
+#     white-space: normal;
+#     max-width: 300px;
+#   }
+#   html[data-bs-theme="slate"] .tooltip.tt-compact {
+#     --bs-tooltip-bg: #1f1f1f;
+#     --bs-tooltip-color: #f3f3f3;
+#   }
+# ')),
+
+    tags$script(HTML("
+
+  function initTooltips(root){
+    root = root || document;
+    var els = [].slice.call(root.querySelectorAll('[data-bs-toggle=\"tooltip\"]'));
+    els.forEach(function(el){
+      var inst = bootstrap.Tooltip.getInstance(el);
+      if (inst) inst.dispose();
+      new bootstrap.Tooltip(el, {
+        placement: el.getAttribute('data-bs-placement') || 'right',
+        customClass: (el.getAttribute('data-bs-custom-class') || '') + ' tt-compact',
+        html: el.getAttribute('data-bs-html') === 'true',
+        sanitize: false,
+        trigger: 'hover focus',
+
+        delay: { show: 500, hide: 150 },   // ← add a half-second show delay
+        animation: true,
+        container: 'body'
+      });
+    });
+  }
+
+  // one-time init
+  document.addEventListener('shiny:connected', function(){ initTooltips(); });
+
+  // re-init when new tooltip-able nodes are inserted
+  new MutationObserver(function(muts){
+    for (const m of muts) {
+      if (m.type === 'childList') {
+        for (const n of m.addedNodes) {
+          if (n.nodeType === 1 &&
+             ((n.matches && n.matches('[data-bs-toggle=\"tooltip\"]')) ||
+              (n.querySelector && n.querySelector('[data-bs-toggle=\"tooltip\"]')))) {
+            initTooltips();
+            return;
+          }
+        }
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+")),
+
+    tags$script(HTML('
+  Shiny.addCustomMessageHandler("updateTooltip", function(x){
+    var el = document.getElementById(x.id);
+    if(!el) return;
+
+    el.setAttribute("data-bs-html", "true");
+    if (x.title != null) {
+      el.setAttribute("data-bs-title", x.title);
+      el.removeAttribute("title");
+    }
+
+    var inst = bootstrap.Tooltip.getInstance(el);
+    if (inst) inst.dispose();
+
+    new bootstrap.Tooltip(el, {
+      placement: x.placement || "right",
+      customClass: (x.customClass || "") + " tt-compact",
+      html: true,
+      sanitize: false,          // ← add this
+      trigger: "hover",
+      animation: false,
+      container: "body"
+    });
+  });
+')),
+
+    tags$script(HTML('
+  function copyVisibleCode(){
+    var which = document.querySelector("input[name=code_choice]:checked").value;
+    var srcId = which==="current" ? "code_current" : "code_all";
+    var ta    = document.createElement("textarea");
+    ta.value  = document.getElementById(srcId).innerText;
+    ta.readOnly = true;
+    ta.style.position = "absolute"; ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select(); document.execCommand("copy");
+    document.body.removeChild(ta);
+    Shiny.setInputValue("did_copy_code", Math.random());
+  }
+  document.addEventListener("shiny:connected", function(){
+    var btn = document.getElementById("copy_code_btn");
+    if(btn) btn.onclick = copyVisibleCode;
+  });
+'))
+),
+
   titlePanel(
     div(
       "fluxtools: Interactive QA/QC with Code Generator",
       actionLink("help", label = icon("question-circle"), style = "margin-left:10px;")
     )
-  ),
+  ),  # ← comma was missing after this
 
-  ## ── 3) Subtitle ─────────────────────────────────────────────────────
+
   uiOutput("subtitle"),
 
-  ## ── 4) Main layout ─────────────────────────────────────────────────
   sidebarLayout(
-
-    ### Sidebar with all your controls
     sidebarPanel(
       style = "max-height: calc(100vh - 80px); overflow-y: auto;",
       width = 4,
 
-      # Upload
-      fileInput("csv_file", "Upload Ameriflux‐style .csv:", accept = ".csv"),
+      tags$h5("Data upload and selection"),
+      fileInput("csv_file", "Upload Ameriflux‐style or Fluxnet .csv:", accept = ".csv"),
 
-      # Year filter
+      hr(),
+
+      # --- UTC select with tooltip on the label ---
+      div(
+        class = "mb-1",
+
+        # label that owns the tooltip
+        tags$label(
+          id    = "data_offset_label",
+          `for` = "data_offset",
+          "View TIMESTAMP_START in:",
+          'data-bs-toggle' = "tooltip",
+          title = "Display only; no DST. Exports & code keep original timestamps"
+        ),
+
+
+        # the select itself (label=NULL because we just drew our own)
+        selectInput(
+          "data_offset", label = NULL,
+          choices  = sprintf("UTC%+d", -12:14),
+          selected = "UTC+0", width = "100%"
+        )
+      ),
+
+      #how to make this closer to the above? and with smaller italic text?
+
+                tags$details(
+            tags$summary("Show timestamp parsing details"),
+            tags$pre(style="margin-top:.5rem;", textOutput("tz_check"))
+          ),
+
+
+
+
+
+
+
+    # div(style="height:.25rem;"),
+
+
+      hr(),
+
+
+
       tagAppendAttributes(
-        selectizeInput("year_sel", "Select Year(s):", choices  = NULL, multiple = TRUE,
-                       options  = list(placeholder = "– upload to load year(s) –",
-                                       plugins     = list("remove_button")),
-                       width = "100%"),
+        selectizeInput(
+          "year_sel", "Select Year(s):",
+          choices = NULL, multiple = TRUE,
+          options = list(
+            placeholder = "– upload to load year(s) –",
+            plugins = list("remove_button")
+          ),
+          width = "100%"
+        ),
         'data-bs-toggle' = "tooltip",
-        title            = "Filter to one or more years"
+        'data-bs-title' = "Filter to one or more years"
       ),
       hr(),
 
-      # new inline axes row:
+
+      tags$h5("Plot selection"),
       fluidRow(
         column(
           6,
-          tags$label(
-            `for`  = "yvar",
-            "Y-axis:",
-            style  = "width:100%; font-weight:500;"
-          ),
+          tags$label(`for` = "yvar", "Y-axis:", style  = "width:100%; font-weight:500;"),
           tagAppendAttributes(
-            selectInput(
-              "yvar", NULL, choices = NULL, width = "100%"
-            ),
+            selectInput("yvar", NULL, choices = NULL, width = "100%"),
             'data-bs-toggle' = "tooltip",
-            title            = "Select your Y-axis variable — the column whose values will be set to NA"
+            title = "Select your Y-axis variable — the column whose values will be set to NA"
           )
         ),
-
         column(
           6,
-          tags$label(
-            `for`  = "xvar",
-            "X-axis:",
-            style  = "width:100%; font-weight:500;"
-          ),
+          tags$label(`for` = "xvar", "X-axis:", style  = "width:100%; font-weight:500;"),
           tagAppendAttributes(
-            selectInput(
-              "xvar", NULL, choices = NULL, width = "100%"
-            ),
+            selectInput("xvar", NULL, choices = NULL, width = "100%"),
             'data-bs-toggle' = "tooltip",
-            title            = "Select your X-axis variable"
+            title = "Select your X-axis variable"
           )
         )
       ),
-      hr()
-      ,
-
-      #correct ()
-      # Manual selection row
-      fluidRow(
-        column(6,actionButton("add_sel", "Flag Data",
-                              width="100%",
-                              icon = icon("check"),
-                              'data-bs-toggle'="tooltip",
-                              title="Add the selected points to the accumulated removal code")
-        ),
-        column(6,
-               actionButton("clear_sel","Clear Selection",
-                            width = "100%",
-                            icon = icon("broom"),
-                            'data-bs-toggle'="tooltip",
-                            title="Clear all flagged points from the current y-variable from the accumulated removal code")
-        )
-      ),
-
-      # Accumulated‐selection row
-      fluidRow(
-        column(6,
-               actionButton("remove_acc","Unflag Data",
-                            width = "100%",
-                            icon = icon("ban"),
-                            'data-bs-toggle'="tooltip",
-                            title="Remove current selection from the accumulated removal code")
-        ),
-        column(6,
-               actionButton("remove","Apply removals",
-                            width = "100%",
-                            icon = icon("trash"),
-                            'data-bs-toggle'="tooltip",
-                            title="Turn the currently selected Y‐values into NA's and remove from view. These will be reflected in the exported .csv using the 'export cleaned data' button")
-        )
-      ),
-
-      tags$br(),
       hr(),
 
-      # Outlier controls
-      sliderInput("sd_thresh", "Highlight points beyond (σ):", min = 0, max = 3, value = 0, step = 1),
-      checkboxInput("show_reg", "Show regression line & R²", value = TRUE),
-
-      #outliers
+      tags$h5("Interact with data"),
       fluidRow(
-        column(6,
-               tagAppendAttributes(
-                 actionButton("add_outliers", "Select all ±σ outliers", width="100%"),
-                 'data-bs-toggle' = "tooltip",
-                 title            = "Select every point whose residual is beyond ± n standard deviations (σ) from the regression line and add to the accumulated code"
-               ),
-        ),
-        column(6,
-               tagAppendAttributes(
-                 actionButton("clear_outliers", "Clear ±σ outliers", width="100%"),
-                 'data-bs-toggle' = "tooltip",
-                 title            = "Remove ± n standard deviations (σ) from the regression line from your the accumulated code"
-               )
-        )
-      ),
-
-
-      hr(),
-
-
-      fluidRow(
-        style = "display: flex; align-items: center; margin-bottom: 0.5rem;",
         column(
-          width = 8, style = "padding-right: 0;",
-          radioButtons(
-            "code_choice", NULL,
-            choiceNames  = list(
-              tagList(icon("code"), HTML("&nbsp;Current")),
-              tagList(icon("list-ul"), HTML("&nbsp;Accumulated"))
-            ),
-            choiceValues = c("current", "all"),
-            inline       = TRUE
+          6,
+          actionButton(
+            "add_sel", "Flag Data",
+            width = "100%", icon = icon("check"),
+            'data-bs-toggle' = "tooltip",
+            title = "Add the selected points to the accumulated removal code"
           )
         ),
         column(
-          width = 4, class = "copy-button-col",
-          tags$button(
-            id    = "copy_code_btn",
-            type  = "button",
-            class = "btn btn-outline-secondary",       # ← use outline so it’s lighter on dark
+          6,
+          actionButton(
+            "clear_sel","Clear Selection",
+            width = "100%", icon = icon("broom"),
             'data-bs-toggle' = "tooltip",
-            title = "Copy visible code",
-            icon("clipboard"),
-            onclick = HTML("
+            title = "Clear all flagged points from the current y-variable from the accumulated removal code"
+          )
+        )
+      ),
+
+      fluidRow(
+        column(
+          6,
+          actionButton(
+            "remove_acc","Unflag Data",
+            width = "100%", icon = icon("ban"),
+            'data-bs-toggle' = "tooltip",
+            title = "Remove current selection from the accumulated removal code"
+          )
+        ),
+        column(
+          6,
+          actionButton(
+            "remove","Apply removals",
+            width = "100%", icon = icon("trash"),
+            'data-bs-toggle' = "tooltip",
+            title = "Turn the currently selected Y‐values into NA's and remove from view. These will be reflected in the exported .csv using the 'export cleaned data' button"
+          )
+        )
+      ),
+
+      hr(),
+
+      bslib::accordion(
+        id = "qa_sections",
+        open = FALSE,
+
+        bslib::accordion_panel(
+          title = tagList(icon("sliders-h"), "Flag by value range"),
+          value = "range",
+          checkboxInput("rng_link_y", "Link selected variable to plot Y-axis", TRUE),
+          selectInput("rng_var", "Variable", choices = NULL),
+          fluidRow(
+            column(6, numericInput("rng_min", "Min (optional)", value = NA)),
+            column(6, numericInput("rng_max", "Max (optional)", value = NA))
+          ),
+          div(class="d-grid gap-2",
+              actionButton("rng_flag", "Flag values outside range"))
+        ),
+
+
+
+
+        bslib::accordion_panel(
+          title = tagList(icon("clock"), "Flag by time"),
+          value = "time",
+          sliderInput(
+            "time_rng", "TIMESTAMP_START range:",
+            min   = 0,
+            max   = 1,
+            value = c(0, 1),
+            timeFormat = "%Y-%m-%d\n%H:%M",
+            step  = 3600
+          ),
+          fluidRow(
+            column(6, actionButton("time_flag",     "Flag inside",  class = "btn btn-primary w-100")),
+            column(6, actionButton("time_flag_out", "Flag outside", class = "btn btn-outline-primary w-100"))
+          )
+            ),
+
+
+        bslib::accordion_panel(
+          title = tags$span(
+
+            class = "d-inline-flex align-items-center gap-2",
+            icon("sliders"),
+            tags$span(
+              HTML("Physical Range Module&nbsp;(PRM)"),
+              'data-bs-toggle'   = "tooltip",
+              'data-bs-placement' = "right",
+              title              = "Clamp variables to possible physical ranges; out-of-range → NA"
+            )
+          ),
+          value = "prm",
+
+          fluidRow(
+            column(
+              6,
+              actionButton(
+                "apply_prm_btn", "Apply PRM",
+                width = "100%", icon = icon("sliders-h"),
+                'data-bs-toggle'="tooltip",
+                title="Clamp to PRM bounds; out-of-range set to NA. Reversible."
+              )
+            ),
+            column(
+              6,
+              actionButton(
+                "undo_prm_btn", "Undo PRM",
+                width = "100%", icon = icon("undo"),
+                'data-bs-toggle'="tooltip",
+                title="Reverts only values changed by the last PRM apply. Other edits unaffected."
+              )
+            )
+          ),
+
+
+          tags$details(
+            tags$summary("PRM options"),
+            tagAppendAttributes(
+              selectizeInput(
+                "prm_families", "Variables (optional):",
+                choices = NULL, multiple = TRUE,
+                options  = list(
+                  placeholder = "Default: All relevant variables matched by PRM",
+                  plugins = list("remove_button")
+                )
+              ),
+              'data-bs-toggle'="tooltip",
+              title="Type base names like SWC, P, TA, CO2 (we match columns by name prefix, e.g. ^SWC($|_)). Leave empty to apply to all"
+            )
+          )
+        ),
+
+        bslib::accordion_panel(
+          title = tagList(icon("bullseye"), "Select outliers"),
+          value = "outliers",
+          tags$h5("Select outliers"),
+          sliderInput("sd_thresh", "Highlight points beyond σ:", min = 0, max = 3, value = 0, step = 1),
+          checkboxInput("show_reg", "Show regression line & R²", value = TRUE),
+          fluidRow(
+            column(
+              6,
+              tagAppendAttributes(
+                actionButton("add_outliers", "Select all ±σ outliers", width="100%"),
+                'data-bs-toggle' = "tooltip",
+                title = "Select every point whose residual is beyond ± n standard deviations (σ) from the regression line and add to the accumulated code"
+              )
+            ),
+            column(
+              6,
+              tagAppendAttributes(
+                actionButton("clear_outliers", "Clear ±σ outliers", width="100%"),
+                'data-bs-toggle' = "tooltip",
+                title = "Remove ± n standard deviations (σ) from the regression line from your the accumulated code"
+              )
+            )
+          )
+        ),
+
+        bslib::accordion_panel(
+          title = tagList(icon("code"), "Code generation"),
+          value = "code",
+
+          fluidRow(
+            class = "align-items-center g-2",
+            style = "display: flex; align-items: center; margin-bottom: 0.5rem;",
+
+            column(
+              width = 8, style = "padding-right: 0;",
+              div(
+                class = "mb-0",
+                radioButtons(
+                  "code_choice", NULL,
+                  choiceNames  = list(
+                    tagList(icon("code"), HTML("&nbsp;Current")),
+                    tagList(icon("list-ul"), HTML("&nbsp;Accumulated"))
+                  ),
+                  choiceValues = c("current", "all"),
+                  inline       = TRUE
+                )
+              )
+            ),
+
+            column(
+              width = 4, class = "copy-button-col",
+              tags$button(
+                id    = "copy_code_btn",
+                type  = "button",
+                class = "btn btn-outline-secondary w-100 d-inline-flex align-items-center justify-content-center gap-2",
+                #class = "btn btn-outline-secondary w-100",
+                #"Copy visible code",
+                'data-bs-toggle' = "tooltip",
+                title = "Copy visible code",
+                icon("clipboard"),
+                span("Copy code"),
+                onclick = HTML("
             // pick current or accumulated
             var which = document.querySelector('input[name=code_choice]:checked').value;
             var srcId = which==='current' ? 'code_current' : 'code_all';
@@ -263,64 +509,274 @@ ui <- fluidPage(
             document.body.removeChild(ta);
             // fire an input event so Shiny can show its own toast
             Shiny.setInputValue('did_copy_code', Math.random());
-          "),
+          ")
+              )
+            )
+          ),
+
+          uiOutput("code_ui"),
+
+          conditionalPanel(
+            "input.code_choice == 'all'",
+            actionButton(
+              "reset_accum", "Clear accumulated",
+              width = "100%",
+              'data-bs-toggle'="tooltip",
+              title = "Remove all points from accumulated list"
+            )
           )
         )
       ),
 
-
-      # the actual code box (must have IDs matching the above JS)
-      uiOutput("code_ui"),
-
-      # only show this when 'Accumulated' is selected
-      conditionalPanel(
-        "input.code_choice == 'all'",
-        actionButton(
-          "reset_accum", "Clear accumulated",
-          width = "100%",
-          'data-bs-toggle'="tooltip",
-          title = "Remove all points from accumulated list")),
       hr(),
 
-
-      # Download & reset
-      # in your sidebarPanel, toward the bottom
       fluidRow(
-        column(4, downloadButton("download_data", "Export cleaned data",
-                                 icon = icon("file-archive"), width="100%"),
-               'data-bs-toggle'="tooltip",
-               title="Download a .zip containing the cleaned CSV (with NAs applied using the 'Apply Removals' button) and the removal R-script"),
-
-        column(4, actionButton("reset_data", "Reload original data",
-                               icon = icon("eraser"), width="100%"),
-               'data-bs-toggle'="tooltip",
-               title="Reset any changes by re-loading the original .csv file"),
-
-        column(4, div(style="margin-top:0.5em;",checkboxInput("dark_mode","Dark mode",FALSE))
+        column(
+          4,
+          downloadButton("download_data", "Export cleaned data", icon = icon("file-archive"), width="100%"),
+          'data-bs-toggle' = "tooltip",
+          title = "Download a .zip containing the cleaned CSV (with NAs applied using the 'Apply Removals' button) and the removal R-script"
+        ),
+        column(
+          4,
+          actionButton("reset_data", "Reload original data", icon = icon("eraser"), width="100%"),
+          'data-bs-toggle' = "tooltip",
+          title = "Reset any changes by re-loading the original .csv file"
+        ),
+        column(
+          4,
+          div(style="margin-top:0.5em;", checkboxInput("dark_mode","Dark mode",FALSE))
         )
       )
-
-    ),# ← CLOSE sidebarPanel() here
-
-
-
-
-
-
+    ),
 
     mainPanel(
-      #style = "height: calc(100vh - 80px); overflow-y: auto;",
       width = 8,
-      plotlyOutput("qc_plot", width = "100%", height = "80vh")#help with different resolutions
-      #plotlyOutput("qc_plot", height = "80vh")
+      plotlyOutput("qc_plot", width = "100%", height = "80vh")
     )
-  )  # ← close sidebarLayout()
+  )
 )
 
 
 
 
+
 server <- function(input, output, session) {
+
+
+  #PRM
+  # --- init reactive stores early (so we can use rv immediately) ---
+  rv <- reactiveValues(
+    df = NULL,
+    df_before_prm = NULL,
+    prm_active = FALSE,
+    prm_summary = NULL,
+    prm_mask = NULL
+  )
+
+  last_sel <- reactiveValues(x = NULL, y = NULL)
+
+  observeEvent(input$xvar, { last_sel$x <- input$xvar }, ignoreInit = TRUE)
+  observeEvent(input$yvar, { last_sel$y <- input$yvar }, ignoreInit = TRUE)
+
+
+  #UTC check
+
+  output$tz_check <- renderText({
+    df <- rv$df
+    if (is.null(df) || !nrow(df)) return("Upload a CSV to see timestamp parsing…")
+
+    off <- data_off_hr()
+    rec <- data_tz()
+
+    paste0(
+      "First row:\n",
+      "  raw:                   ", df$raw_ts[1], "\n",
+      sprintf("  recorded clock (UTC%+d): %s\n", off,
+              format(df$TIMESTAMP_START[1] + off*3600, "%Y-%m-%d %H:%M %Z", tz = rec)),
+      "  absolute UTC:          ", format(df$TIMESTAMP_START[1], "%Y-%m-%d %H:%M %Z", tz = "UTC")
+    )
+  })
+
+
+
+  # create, don't set yet
+  orig_df <- reactiveVal(NULL)
+
+  # put this right after rv/orig_df are created (and BEFORE any observeEvent that uses them)
+  sel_keys       <- reactiveVal(integer(0))
+  outlier_keys   <- reactiveVal(integer(0))
+  removed_ts     <- reactiveValues()
+  confirmed_ts   <- reactiveValues()
+  selected_keys  <- reactive({
+    sel <- tryCatch(plotly::event_data("plotly_selected", source = "qc_plot"),
+                    error = function(e) NULL)
+    if (is.null(sel)) integer(0) else sel$key
+  })
+
+
+  # small helper used later
+  `%||%` <- function(x, y) if (is.null(x)) y else x
+
+
+  # helper (put near other helpers)
+  infer_cadence_sec <- function(ts) {
+    d <- diff(sort(unique(as.numeric(ts))))
+    if (!length(d)) return(3600L)
+    # robust guess: median rounded to 30m or 60m
+    guess <- as.integer(round(median(d)))
+    if (abs(guess - 1800L) < abs(guess - 3600L)) 1800L else 3600L
+  }
+
+  align_to_step <- function(t, step) as.POSIXct(floor(as.numeric(t) / step) * step, origin = "1970-01-01", tz = "UTC")
+  ceil_to_step  <- function(t, step) as.POSIXct(ceiling(as.numeric(t) / step) * step, origin = "1970-01-01", tz = "UTC")
+
+  # is the package available? (used by the safe wrappers)
+  have_flux <- requireNamespace("fluxtools", quietly = TRUE)
+
+  resolve_prm_fun <- function(name) {
+    # 1) dev override from search path
+    if (exists(name, mode = "function", inherits = TRUE)) return(get(name, mode = "function"))
+
+    # 2) exported from fluxtools
+    if (have_flux) {
+      ns <- asNamespace("fluxtools")
+      if (exists(name, envir = ns, mode = "function")) return(get(name, envir = ns, mode = "function"))
+      if (exists(name, where = "package:fluxtools", mode = "function", inherits = FALSE)) {
+        return(get(name, asNamespace("fluxtools")))
+      }
+    }
+    NULL
+  }
+
+  get_rules <- function() {
+    fn <- resolve_prm_fun("get_prm_rules")
+    if (is.null(fn)) return(NULL)
+    fn()
+  }
+
+  apply_prm_safe <- function(df, include = NULL) {
+    fn <- resolve_prm_fun("apply_prm")
+    if (is.null(fn)) stop("PRM not available in your installed 'fluxtools' (apply_prm missing)")
+    fn(df, include = include, note = FALSE, summarize = TRUE)  # keep pkg defaults (skip_qc=TRUE)
+  }
+
+  #time range
+  # rng_var -> yvar
+  is_syncing <- reactiveVal(FALSE)
+
+  observeEvent(input$rng_var, {
+    if (isTRUE(input$rng_link_y) && !is_syncing()) {
+      is_syncing(TRUE)
+      on.exit(is_syncing(FALSE), add = TRUE)
+      if (!is.null(input$rng_var) && !identical(input$yvar, input$rng_var)) {
+        freezeReactiveValue(input, "yvar")
+        updateSelectInput(session, "yvar", selected = input$rng_var)
+      }
+    }
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$yvar, {
+    if (isTRUE(input$rng_link_y) && !is_syncing()) {
+      is_syncing(TRUE)
+      on.exit(is_syncing(FALSE), add = TRUE)
+      if (!is.null(input$yvar) && !identical(input$rng_var, input$yvar)) {
+        freezeReactiveValue(input, "rng_var")
+        updateSelectInput(session, "rng_var", selected = input$yvar)
+      }
+    }
+
+    # Clear current brush/selection and rebuild orange “accumulated” for this yvar
+    sel_keys(integer(0))
+    session$resetBrush("qc_plot")
+    current_ts <- removed_ts[[ input$yvar ]] %||% character()
+    if (length(current_ts)) {
+      matching_rows <- which(df_by_year()$ts_str %in% current_ts)
+      sel_keys(matching_rows)
+    }
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$time_flag, {
+    tr <- input$time_rng; req(tr)
+    df <- df_by_year()
+    idx <- which(df$TIMESTAMP_START >= tr[1] & df$TIMESTAMP_START <= tr[2])
+    if (!length(idx)) { showNotification("No points in that time range.", type = "message"); return() }
+    rows <- df$.row[idx]
+    sel_keys(unique(c(isolate(sel_keys()), rows)))
+    ts <- df$ts_str[idx]
+    # add to *current Y variable’s* removal set (that’s the one you’ll mutate on “Apply removals”)
+    v <- input$yvar
+    old <- removed_ts[[v]] %||% character()
+    removed_ts[[v]] <- unique(c(old, ts))
+  })
+
+  observeEvent(input$time_flag_out, {
+    tr <- input$time_rng; req(tr)
+    df <- df_by_year()
+    idx <- which(df$TIMESTAMP_START < tr[1] | df$TIMESTAMP_START > tr[2])
+    if (!length(idx)) { showNotification("No points outside that time range.", type = "message"); return() }
+    rows <- df$.row[idx]
+    sel_keys(unique(c(isolate(sel_keys()), rows)))
+    ts <- df$ts_str[idx]
+    v <- input$yvar
+    old <- removed_ts[[v]] %||% character()
+    removed_ts[[v]] <- unique(c(old, ts))
+  })
+
+  # returns +3 for "UTC+3", -5 for "UTC-5"
+  # --- helpers ---
+  parse_utc_hours <- function(lbl) as.integer(sub("UTC([+-]?\\d+).*", "\\1", lbl))
+
+  data_off_hr <- reactive({ parse_utc_hours(req(input$data_offset)) })
+  data_tz <- reactive({
+    off <- data_off_hr()
+    if (off == 0) "UTC" else paste0("Etc/GMT", if (off < 0) "+" else "-", abs(off))  # POSIX sign flip
+  })
+
+  # raw csv
+  raw_df <- reactive({
+    req(input$csv_file)
+    read.csv(
+      input$csv_file$datapath,
+      stringsAsFactors = FALSE,
+      colClasses = c(TIMESTAMP_START = "character"),
+      na.strings = "-9999"
+    )
+  })
+
+  # parse respecting *data*'s stated offset, then map to absolute UTC
+  shifted_df <- reactive({
+    df0 <- raw_df(); req(df0, input$data_offset)
+
+    # 1) keep only digits, then right-pad minutes to 12 chars
+    digits <- gsub("[^0-9]", "", df0$TIMESTAMP_START %||% "")
+    digits <- substr(paste0(digits, "0000"), 1, 12)  # handles YYYYMMDDHH or YYYYMMDD
+
+    # 2) parse as clock-time, then shift to absolute UTC by the *data's* stated offset
+    off_hr <- parse_utc_hours(input$data_offset)
+
+    ts_parsed <- as.POSIXct(digits, format = "%Y%m%d%H%M", tz = "UTC")
+    ts_utc    <- ts_parsed - off_hr * 3600
+
+
+    #ts_parsed <- suppressWarnings(as.POSIXct(digits, format = "%Y%m%d%H%M", tz = "UTC"))
+    # if *everything* failed to parse, abort politely
+    if (!any(!is.na(ts_parsed))) {
+      showNotification("Could not parse TIMESTAMP_START. Check the column and the UTC offset.", type = "error", duration = 8)
+      req(FALSE)
+    }
+
+
+
+    df0 %>%
+      mutate(
+        raw_ts          = TIMESTAMP_START,
+        ts_str          = digits,
+        TIMESTAMP_START = ts_utc,
+        .row            = dplyr::row_number()
+      )
+  })
+
   output$subtitle <- renderUI({
     req(input$yvar)
     col <- if (isTRUE(input$dark_mode)) "#DDD" else "#555"
@@ -334,46 +790,23 @@ server <- function(input, output, session) {
     showNotification("Code copied ✅", type="message", duration = 1)
   })
 
-  # 1) “Injected” offset → local_tz
-  # 1) “Injected” offset → local_tz (inline, no helper)
-  offset   <- getOption("shiny.initialOffset", default = 0)
-  local_tz <- if (offset == 0) {
-    "UTC"
-  } else {
-    # note: Etc/GMT signs are inverted: Etc/GMT+5 == UTC-5
-    sign_chr <- if (offset < 0) "+" else "-"
-    paste0("Etc/GMT", sign_chr, abs(offset))
-  }
-
-  # 2a) Read raw CSV
-  raw_df <- reactive({
-    req(input$csv_file)
-    read.csv(
-      input$csv_file$datapath,
-      stringsAsFactors = FALSE,
-      colClasses = c(TIMESTAMP_START = "character"),
-      na.strings = "-9999"
-    )
+  #PRM Server
+  #PRM help table
+  output$help_prm_table <- renderTable({
+    rules <- get_rules()
+    if (is.null(rules)) {
+      return(data.frame(
+        Note    = "Load 'fluxtools' in this R session to view the PRM table here",
+        Example = "library(fluxtools); get_prm_rules()"
+      ))
+    }
+    rules[, c("variable","description","units","min","max")]
   })
 
-  # 2b) Parse TIMESTAMP_START → POSIXct in local_tz + keep .row index
-  shifted_df <- reactive({
-    df0 <- raw_df()
-    req(df0)
-    df0 %>%
-      mutate(
-        raw_ts = TIMESTAMP_START,
-        ts_str = substr(gsub("[^0-9]", "", raw_ts), 1, 12),
-        TIMESTAMP_START = as.POSIXct(ts_str, "%Y%m%d%H%M", tz = local_tz),
-        .row            = row_number()
-      )
-  })
-
-
-
-  # 2c) Keep a reactiveValues copy of the current data, plus an immutable original
-  rv      <- reactiveValues(df = NULL)
-  orig_df <- reactiveVal(NULL)
+  #prm reactive values
+  rv$prm_active     <- FALSE
+  rv$df_before_prm  <- NULL
+  rv$prm_summary    <- NULL
 
   #code box
   output$code_ui <- renderUI({
@@ -399,9 +832,32 @@ server <- function(input, output, session) {
     session$sendCustomMessage("toggleBodyClass", list(add=addClass, remove=removeClass))
   })
 
+#Tooltip thats automatic and obvious (doesnt need mouse hover)
+  # observe({
+  #   off <- data_off_hr()
+  #   tip <- sprintf(
+  #     "Viewing timestamps as UTC%+d (fixed offset; no DST)<br>
+  #    Viewer-only: this setting does not change the exported file<br>
+  #    Generated code and exports match the original TIMESTAMP_START string",
+  #     off
+  #   )
+  #   session$sendCustomMessage(
+  #     "updateTooltip",
+  #     list(id = "data_offset_label", title = tip, customClass = "tt-compact")
+  #   )
+  # })
 
-
-
+  # observe({
+  #   off <- data_off_hr()
+  #   tip <- sprintf(
+  #     "Viewing timestamps as UTC%+d<br>Fixed offset; no DST<br>Viewer-only: this setting does not change the exported file<br>Generated code and exports match the original TIMESTAMP_START string",
+  #     off
+  #   )
+  #   session$sendCustomMessage(
+  #     "updateTooltip",
+  #     list(id = "data_offset_label", title = tip, customClass = "tt-compact")
+  #   )
+  # })
 
   observeEvent(input$reset_accum, {
     removed_ts[[input$yvar]] <- NULL
@@ -410,35 +866,38 @@ server <- function(input, output, session) {
     session$resetBrush("qc_plot")
   })
 
-
   #Copy all logic
   observeEvent(input$copy_code, {
     which_id <- if (input$code_choice == "current") "code_current" else "code_all"
     session$sendCustomMessage("doCopy", which_id)
   })
 
-
-
-
-
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # When a new file arrives, place it into rv$df, record original copy,
-  # and populate “year_sel” with “All” + each unique year
-  # ────────────────────────────────────────────────────────────────────────────
-  observeEvent(shifted_df(), {
-    rv$df <- shifted_df()
-    orig_df(shifted_df())
-
-    all_years <- sort(unique(format(rv$df$TIMESTAMP_START, "%Y")))
-    # add “All” in front of every other year
-    choices_with_all <- c("All", all_years)
+    #Prm
+    # PRM family choices present in the data
+    # PRM variable choices present in the uploaded data
+  # Put this somewhere in server() AFTER rv$df exists:
+  observe({
+    req(rv$df)
+    present <- tryCatch({
+      rules <- get_rules()
+      if (is.null(rules)) character(0) else {
+        base <- unique(rules$variable)
+        base[vapply(
+          base,
+          function(b) any(grepl(paste0("^", b, "($|_)"), names(rv$df))),
+          logical(1)
+        )]
+      }
+    }, error = function(e) character(0))
 
     updateSelectizeInput(
-      session,
-      "year_sel",
-      choices  = c("All", all_years),
-      selected = "All"
+      session, "prm_families",
+      choices  = present,
+      options  = list(
+        placeholder = if (length(present)) "All variables" else "PRM not available; install/upgrade fluxtools",
+        plugins     = list("remove_button"),
+        create      = FALSE
+      )
     )
   })
 
@@ -458,6 +917,36 @@ server <- function(input, output, session) {
       filter(format(TIMESTAMP_START, "%Y") %in% chosen_years)
   })
 
+  # replace your current observeEvent(df_by_year(), { ... }) with this:
+  observe({
+    df <- df_by_year(); y <- input$yvar; req(df, y)
+    ts <- df$TIMESTAMP_START[!is.na(df[[y]]) & !is.na(df$TIMESTAMP_START)]
+    if (length(ts) >= 2) {
+      step <- infer_cadence_sec(ts)       # 1800 or 3600
+      r    <- range(ts)
+      r[1] <- align_to_step(r[1], step)
+      r[2] <- ceil_to_step(r[2],  step)
+      updateSliderInput(session, "time_rng",
+                        min = r[1], max = r[2], value = r,
+                        step = step, timeFormat = "%Y-%m-%d\n%H:%M"
+      )
+    } else {
+      # fallback: use whole data range if possible, otherwise a tiny dummy range
+      rng_all <- range(df$TIMESTAMP_START, na.rm = TRUE)
+      if (all(is.finite(rng_all))) {
+        step_f <- 3600L
+        r1 <- align_to_step(rng_all[1], step_f)
+        r2 <- ceil_to_step(rng_all[2],  step_f)
+        updateSliderInput(session, "time_rng",
+                          min = r1, max = r2, value = c(r1, r2),
+                          step = step_f, timeFormat = "%Y-%m-%d\n%H:%M"
+        )
+      } else {
+        updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0, 1), step = 3600)
+      }
+    }
+  })
+
   #  Clear *current* selection in the code box:
   observeEvent(input$clear_sel, {
     # 1) clear the lasso brush
@@ -466,82 +955,199 @@ server <- function(input, output, session) {
     sel_keys(integer(0))
   })
 
-
-
-
-  # Track manual selections / removals
-  sel_keys       <- reactiveVal(integer(0))
-  removed_ts     <- reactiveValues()   # for “accumulated‐selection code”
-  outlier_keys   <- reactiveVal(integer(0))
-
-  # Track exactly which timestamps have been Confirm Removed
-  confirmed_ts <- reactiveValues()
-
-  # Helper: lasso‐selected rows
-  selected_keys <- reactive({
-    sel <- event_data("plotly_selected", source = "qc_plot")
-    if (is.null(sel)) return(integer(0))
-    sel$key
-  })
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # Whenever the Y‐variable changes, clear the “current selection” and outliers
-  # ────────────────────────────────────────────────────────────────────────────
-  observeEvent(input$yvar, {
-    req(input$yvar)                # ← ensure yvar is non‐NULL/non‐empty
-    sel_keys(integer(0))
-    #outlier_keys(integer(0))
-    session$resetBrush("qc_plot")
-
-    # Re‐populate sel_keys() from removed_ts for this new yvar
-    # (removed_ts[[ yvar ]] might be a character vector of ts_str values)
-    current_ts <- removed_ts[[ input$yvar ]] %||% character()
-    if (length(current_ts)) {
-      matching_rows <- which(df_by_year()$ts_str %in% current_ts)
-      sel_keys(matching_rows)
+  # Show PRM summary table in a modal
+  output$prm_summary_tbl <- renderTable({
+    s <- rv$prm_summary
+    req(s)
+    rules <- get_rules()
+    if (!is.null(rules)) {
+      u_map <- setNames(rules$units, rules$variable)
+      s$units <- unname(u_map[s$family])
     } else {
-      sel_keys(integer(0))
+      s$units <- NA_character_
     }
+    s$pct_replaced <- round(s$pct_replaced, 1)
+    s[, c("column","family","units","min","max","n_replaced","pct_replaced")]
   })
 
+  observeEvent(input$apply_prm_btn, {
+    req(rv$df)
+    if (isTRUE(rv$prm_active)) {
+      showNotification("PRM already applied. Use “Undo PRM” to revert", type="message")
+      return()
+    }
+    before <- rv$df
+    fam    <- input$prm_families
 
-  # ────────────────────────────────────────────────────────────────────────────
-  # Rebuild xvar/yvar dropdowns whenever new data arrives
-  # ────────────────────────────────────────────────────────────────────────────
-  observe({
-    df <- df_by_year()
-    req(df)
+    res <- try(apply_prm_safe(before, include = if (length(fam)) fam else NULL), silent = TRUE)
+    if (inherits(res, "try-error")) {
+      showNotification(
+        "PRM function not found in your 'fluxtools' version. Update or load the dev build",
+        type = "error", duration = 6
+      )
+      return()
+    }
+    after <- res$data
 
+    # Build a mask of cells PRM set to NA (by .row so we can map regardless of filters)
+    mask <- list()
+    common <- intersect(names(before), names(after))
+    for (nm in common) {
+      if (!is.numeric(before[[nm]]) || !is.numeric(after[[nm]])) next
+      idx <- which(!is.na(before[[nm]]) & is.na(after[[nm]]))
+      if (length(idx)) {
+        mask[[nm]] <- data.frame(.row = before$.row[idx], old = before[[nm]][idx])
+      }
+    }
+
+    rv$df          <- after
+    rv$prm_summary <- res$summary
+    rv$prm_mask    <- mask
+    rv$prm_active  <- TRUE
+
+    ncols <- if (nrow(res$summary)) length(unique(res$summary$column)) else 0L
+    nrep  <- if (nrow(res$summary)) sum(res$summary$n_replaced, na.rm = TRUE) else 0L
+    showNotification(sprintf("PRM applied: %d columns checked, %d values set to NA.", ncols, nrep),
+                     type = "message", duration = 4)
+
+    showModal(modalDialog(
+      title = "PRM summary",
+      tagList(
+        tags$p("Expected units and PRM bounds are shown per column. Out-of-range values were set to NA."),
+        tableOutput("prm_summary_tbl")
+      ),
+      size = "l",
+      easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input$undo_prm_btn, {
+    if (!isTRUE(rv$prm_active) || is.null(rv$prm_mask)) {
+      showNotification("Nothing to undo.", type = "message")
+      return()
+    }
+    tmp <- rv$df
+    # Restore only cells PRM nulled that are still NA now (so later user edits are preserved)
+    for (nm in names(rv$prm_mask)) {
+      rows <- rv$prm_mask[[nm]]$.row
+      old  <- rv$prm_mask[[nm]]$old
+      pos  <- match(rows, tmp$.row)
+      keep <- !is.na(pos) & is.na(tmp[[nm]][pos])
+      if (any(keep)) tmp[[nm]][pos[keep]] <- old[keep]
+    }
+    rv$df <- tmp
+    rv$prm_mask <- NULL
+    rv$prm_summary <- NULL
+    rv$prm_active <- FALSE
+    showNotification("Undid PRM-only changes.", type = "message", duration = 3)
+  })
+
+  observeEvent(shifted_df(), {
+    df <- shifted_df(); req(df)
+    rv$df <- df; orig_df(df)
+
+    # Choices
     num_cols <- df %>%
-      select(-TIMESTAMP_START, -raw_ts, -ts_str, -.row) %>%
-      select(where(is.numeric)) %>%
-      names()
-
+      dplyr::select(-TIMESTAMP_START, -raw_ts, -ts_str, -.row) %>%
+      dplyr::select(where(is.numeric)) %>% names()
     x_choices <- c("TIMESTAMP_START", num_cols)
     y_choices <- num_cols
 
-    updateSelectInput(
-      session, "xvar",
-      choices = x_choices,
-      selected =
-        if (!is.null(input$xvar) && input$xvar %in% x_choices) {
-          input$xvar
-        } else {
-          "TIMESTAMP_START"
-        }
+    # Remember current selections (if any)
+    prev_x <- isolate(input$xvar)
+    prev_y <- isolate(input$yvar)
+
+    # Year list
+    yrs <- sort(unique(format(df$TIMESTAMP_START, "%Y")))
+    yrs <- yrs[!is.na(yrs)]
+    if (!length(yrs)) {
+      # fall back to "All" only; avoids NA in choices
+      updateSelectizeInput(session, "year_sel",
+                           choices  = c("All"),
+                           selected = "All",
+                           server   = TRUE
+      )
+    } else {
+      updateSelectizeInput(session, "year_sel",
+                           choices  = c("All", yrs),
+                           selected = isolate(if (is.null(input$year_sel)) "All" else input$year_sel),
+                           server   = TRUE
+      )
+    }
+
+
+    # Only change selected values if they’re invalid under the new choices
+    sel_x <- if (!is.null(prev_x) && prev_x %in% x_choices) prev_x else "TIMESTAMP_START"
+    sel_y <- if (!is.null(prev_y) && prev_y %in% y_choices) prev_y else (y_choices[1] %||% "")
+
+    # Freeze to avoid triggering observeEvent(input$xvar/yvar) while we update
+    freezeReactiveValue(input, "xvar")
+    freezeReactiveValue(input, "yvar")
+
+    updateSelectInput(session, "xvar", choices = x_choices, selected = sel_x)
+    updateSelectInput(session, "yvar", choices = y_choices, selected = sel_y)
+
+    # Keep rng_var aligned *once* on data reset, not continuously
+    freezeReactiveValue(input, "rng_var")
+    updateSelectInput(session, "rng_var", choices = y_choices,
+                      selected = if (!is.null(sel_y) && sel_y %in% y_choices) sel_y else y_choices[1])
+
+    # Initialize/refresh the time slider from data
+    # Initialize/refresh the time slider from data
+    rng  <- range(df$TIMESTAMP_START, na.rm = TRUE)
+    step <- infer_cadence_sec(df$TIMESTAMP_START)
+
+    updateSliderInput(
+      session, "time_rng",
+      min = rng[1], max = rng[2], value = rng,
+      step = step, timeFormat = "%Y-%m-%d\n%H:%M"
     )
 
-    updateSelectInput(
-      session, "yvar",
-      choices = y_choices,
-      selected =
-        if (!is.null(input$yvar) && input$yvar %in% y_choices) {
-          input$yvar
-        } else {
-          y_choices[1]
-        }
-    )
+    # Build time slider from actual cadence (30m or 60m) again using non-NA timestamps
+    ts_all <- df$TIMESTAMP_START[!is.na(df$TIMESTAMP_START)]
+    if (length(ts_all) >= 2) {
+      step0 <- infer_cadence_sec(ts_all)
+      r0    <- range(ts_all)
+      r0[1] <- align_to_step(r0[1], step0)
+      r0[2] <- ceil_to_step(r0[2],  step0)
+      updateSliderInput(
+        session, "time_rng",
+        min = r0[1], max = r0[2], value = r0,
+        step = step0, timeFormat = "%Y-%m-%d\n%H:%M"
+      )
+    } else {
+      updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0, 1))
+    }
+
+
+
+
+
   })
+
+  observeEvent(input$rng_flag, {
+    req(input$rng_var)
+    df <- df_by_year()
+    v  <- input$rng_var
+    idx <- which( (!is.na(input$rng_min) & df[[v]] < input$rng_min) |
+                    (!is.na(input$rng_max) & df[[v]] > input$rng_max) )
+    if (!length(idx)) { showNotification("No points outside that range.", type="message"); return() }
+    rows <- df$.row[idx]
+    sel_keys(unique(c(isolate(sel_keys()), rows)))
+    ts <- df$ts_str[idx]
+    old <- removed_ts[[v]] %||% character()
+    removed_ts[[v]] <- unique(c(old, ts))
+  })
+
+  observeEvent(input$rng_clear, {
+    v <- input$rng_var; req(v)
+    ts_v <- removed_ts[[v]] %||% character()
+    if (!length(ts_v)) return()
+    keep <- !(df_by_year()$ts_str %in% ts_v)
+    sel_keys(which(keep))
+    removed_ts[[v]] <- NULL
+  })
+
 
   # ────────────────────────────────────────────────────────────────────────────
   # Compute residuals & flag ±σ outliers
@@ -637,6 +1243,27 @@ server <- function(input, output, session) {
           )
         ),
 
+        #PRM info
+        tabPanel(
+          "PRM",
+          tagList(
+            tags$p(
+              "The Physical Range Module (PRM) clamps variables to physically ",
+              "reasonable ranges (AmeriFlux Technical Note, Table A1). Values ",
+              "outside bounds are set to NA. Families are matched by name prefix ",
+              "(e.g., '^SWC($|_)')."
+            ),
+            tags$ul(
+              tags$li(tags$b("Apply PRM:"), " Sidebar → ", tags$code("Apply PRM"),
+                      " (reversible via ", tags$code("Undo PRM"), ")"),
+              tags$li(tags$b("Variables:"), " optionally limit PRM to specific variable groups (e.g., SWC, P, TA, CO2)")
+            ),
+            tags$h5("PRM bounds"),
+            tableOutput("help_prm_table")
+          )
+        ),
+
+
         # ─── Vignette ────────────────────────────────────────────────────────────
         tabPanel(
           "Vignette",
@@ -697,37 +1324,6 @@ server <- function(input, output, session) {
     removed_ts[[input$yvar]] <- unique(c(old, ts))
   })
 
-  observeEvent(input$remove, {
-    # 1) figure out which rows (in the current filtered view) to remove:
-    local_rows <- union(union(
-      isolate(selected_keys()),
-      isolate(sel_keys())
-    ), isolate(outlier_keys()))
-
-    if (length(local_rows)==0) return()
-
-    # 2) map those back to the master dataset via the .row index:
-    rows_global <- df_by_year()[local_rows, ]$.row
-
-    # 3) pull out the master copy, set y‐var to NA there, then reassign:
-    tmp <- rv$df
-    tmp[[ input$yvar ]][ rows_global ] <- NA_real_
-    rv$df <- tmp
-
-    # 4) record them under confirmed_ts so we can generate the script later
-    just_ts        <- df_by_year()[local_rows, ]$ts_str
-    old_confirmed  <- confirmed_ts[[ input$yvar ]] %||% character()
-    confirmed_ts[[ input$yvar ]] <- unique(c(old_confirmed, just_ts))
-
-    # 5) and clear out all your selection state:
-    removed_ts[[input$yvar]] <- setdiff(
-      removed_ts[[input$yvar]] %||% character(),
-      just_ts
-    )
-    sel_keys(integer(0))
-    outlier_keys(integer(0))
-    session$resetBrush("qc_plot")
-  })
 
 
   # ────────────────────────────────────────────────────────────────────────────
@@ -760,54 +1356,58 @@ server <- function(input, output, session) {
 
     marker_blue <- if (isTRUE(input$dark_mode)) "#1F62FF" else "#1F449C"
 
+    # use absolute UTC for data; make a view-only shifted time for plotting/labels
+    if (identical(input$xvar, "TIMESTAMP_START")) {
+      dfc$ts_view <- dfc$TIMESTAMP_START + data_off_hr()*3600
+    }
+
+
     p <- plot_ly(
       data   = dfc,
-      x      = ~.data[[input$xvar]],
+      x      = if (identical(input$xvar, "TIMESTAMP_START")) ~ts_view else ~.data[[input$xvar]],
       y      = ~.data[[input$yvar]],
       key    = ~.row,
       source = "qc_plot",
       mode   = "markers",
       type   = "scatter",
       marker = list(color = marker_blue, opacity = 0.8)
-      #marker = list(color = "#228833", opacity = 0.6)
-    )%>%
+    ) %>%
       event_register("plotly_selected")
 
 
 
+
+
     # Plot the ±σ outliers as red
-    if (input$sd_thresh > 0) {
-      p <- p %>%
-        add_trace(
-          data       = filter(dfc, flag == "outlier"),
-          x          = ~.data[[input$xvar]],
-          y          = ~.data[[input$yvar]],
-          mode       = "markers",
-          type       = "scatter",
-          marker     = list(color = "#F05039", opacity = 0.8),
+  # outliers layer
+  if (input$sd_thresh > 0) {
+    p <- p %>%
+      add_trace(
+        data = dplyr::filter(dfc, flag == "outlier"),
+        x    = if (identical(input$xvar, "TIMESTAMP_START")) ~ts_view else ~.data[[input$xvar]],
+        y    = ~.data[[input$yvar]],
+        mode = "markers",
+        type = "scatter",
+        marker = list(color = "#F05039", opacity = 0.8),
+        showlegend = FALSE
+      )
+  }
 
+  # accumulated layer
+  if (length(sel_keys()) > 0) {
+    p <- p %>%
+      add_trace(
+        data = dfc %>% dplyr::filter(.row %in% sel_keys()),
+        x    = if (identical(input$xvar, "TIMESTAMP_START")) ~ts_view else ~.data[[input$xvar]],
+        y    = ~.data[[input$yvar]],
+        mode = "markers",
+        type = "scatter",
+        marker = list(color = "#FFC107"),
+        inherit = FALSE,
+        showlegend = FALSE
+      )
+  }
 
-
-          #marker     = list(color = "#ee6677", opacity = 0.8),
-          showlegend = FALSE
-        )
-    }
-
-    # Plot the “accumulated” (orange) points on top
-    if (length(sel_keys()) > 0) {
-      p <- p %>%
-        add_trace(
-          data       = dfc %>% filter(.row %in% sel_keys()),
-          x          = ~.data[[input$xvar]],
-          y          = ~.data[[input$yvar]],
-          mode       = "markers",
-          type       = "scatter",
-          marker     = list(color = "#FFC107"),# size = 10),
-
-          inherit    = FALSE,
-          showlegend = FALSE
-        )
-    }
 
 
     #plotly theme dark vs light mode
@@ -822,7 +1422,6 @@ server <- function(input, output, session) {
         # )
       )
     }
-
 
     # R2 value for ALL points,
     # then fit a second time on (all points minus accumulated selections).
@@ -849,9 +1448,6 @@ server <- function(input, output, session) {
         r2_bg_all <- if (isTRUE(input$dark_mode)) "#F52100" else "#FFBAAF"
         r2_bg_sel <- if (isTRUE(input$dark_mode)) "#B87700" else "#FFC65C"
 
-        #r2_bg_all <- "#FFBAAF"
-        #r2_bg_sel <- "#FFC65C"
-
         p <- p %>%
           # 1) black line, slightly thicker
           add_lines(
@@ -876,22 +1472,6 @@ server <- function(input, output, session) {
             showlegend = FALSE
           )%>%
 
-
-
-
-          # p <- p %>%
-          #   add_lines(
-          #     x          = xseq_all,
-          #     y          = preds_all,
-          #     inherit    = FALSE,
-          #     line       = list(
-          #       color = r2_bg_all,               # your chosen static color
-          #       width = 6                        # bump thickness up (default is ~2)
-          #     ),
-          #     #line       = list(color = "gray50", width = 4),  # ← add width here
-          #     #line       = list(color = "gray50"),
-          #     showlegend = FALSE
-          #   ) %>%
           add_annotations(
             xref        = "paper",
             yref        = "paper",
@@ -960,11 +1540,11 @@ server <- function(input, output, session) {
         margin = list(l = 80, r = 20, b = 80, t = 20),
         #end plot edits
 
-        xaxis    = if (input$xvar == "TIMESTAMP_START") {
-          list(type = "date", tickformat = "%b %d\n%H:%M", title = input$xvar)
-        } else {
-          list(title = input$xvar)
-        },
+        xaxis = if (input$xvar == "TIMESTAMP_START") {
+          list(type = "date",
+               tickformat = "%b %d\n%H:%M",
+               title = sprintf("TIMESTAMP_START (UTC%+d)", data_off_hr()))
+        } else list(title = input$xvar),
         yaxis = list(title = input$yvar)
       ) %>%
       event_register("plotly_selected")
@@ -974,24 +1554,22 @@ server <- function(input, output, session) {
   # Preview table (same as before)
   # ────────────────────────────────────────────────────────────────────────────
   output$preview <- renderTable({
-    keys <- selected_keys()
-    if (length(keys) == 0) keys <- sel_keys()
+    keys <- selected_keys(); if (length(keys) == 0) keys <- sel_keys()
     if (length(keys) == 0) return(NULL)
 
-    local_label <- sprintf("Timestamp (UTC%+d)", offset)
+    hrs <- data_off_hr()
+    local_label <- sprintf("Timestamp (UTC%+d)", hrs)
 
     df_by_year() %>%
-      filter(.row %in% keys) %>%
-      mutate(
-        !!local_label := format(
-          TIMESTAMP_START,
-          "%Y-%m-%d %H:%M",
-          tz = local_tz
-        )
+      dplyr::filter(.row %in% keys) %>%
+      dplyr::mutate(
+        !!local_label := format(TIMESTAMP_START, "%Y-%m-%d %H:%M", tz = data_tz())
       ) %>%
-      select(all_of(local_label), !!sym(input$yvar), raw_ts) %>%
+      dplyr::select(all_of(local_label), !!rlang::sym(input$yvar), raw_ts) %>%
       setNames(c(local_label, input$yvar, "raw_ts"))
   }, sanitize.text.function = identity)
+
+
 
   # ────────────────────────────────────────────────────────────────────────────
   # Current‐selection code
@@ -1023,17 +1601,13 @@ server <- function(input, output, session) {
   # Accumulated‐selection code
   # ────────────────────────────────────────────────────────────────────────────
   output$code_all <- renderText({
-    all_removals <- reactiveValuesToList(removed_ts)
-    all_removals <- all_removals[vapply(all_removals, length, FUN.VALUE = integer(1)) > 0]
-    if (length(all_removals) == 0) {
-      return("
-
-<!-- click “Flag Data” or “Add all ±σ outliers” → see code here -->
-
-")
+    cfs <- reactiveValuesToList(confirmed_ts)
+    cfs <- cfs[vapply(cfs, length, FUN.VALUE = integer(1)) > 0]
+    if (!length(cfs)) {
+      return("\n<!-- no confirmed removals yet (click “Apply removals”) -->\n")
     }
-    snippets <- lapply(names(all_removals), function(var) {
-      ts    <- all_removals[[var]]
+    snippets <- lapply(names(cfs), function(var) {
+      ts    <- cfs[[var]]
       conds <- paste0("TIMESTAMP_START == '", ts, "' ~ NA_real_", collapse = ",\n      ")
       paste0(
         "df <- df %>%\n",
@@ -1048,12 +1622,39 @@ server <- function(input, output, session) {
     paste(unlist(snippets), collapse = "\n\n")
   })
 
+#   output$code_all <- renderText({
+#     #all_removals <- reactiveValuesToList(removed_ts)
+#     all_removals <- all_removals[vapply(all_removals, length, FUN.VALUE = integer(1)) > 0]
+#     if (length(all_removals) == 0) {
+#       return("
+#
+# <!-- click “Flag Data” or “Add all ±σ outliers” → see code here -->
+#
+# ")
+#     }
+#     snippets <- lapply(names(all_removals), function(var) {
+#       ts    <- all_removals[[var]]
+#       conds <- paste0("TIMESTAMP_START == '", ts, "' ~ NA_real_", collapse = ",\n      ")
+#       paste0(
+#         "df <- df %>%\n",
+#         "  mutate(\n",
+#         "    ", var, " = case_when(\n",
+#         "      ", conds, ",\n",
+#         "      TRUE ~ ", var, "\n",
+#         "    )\n",
+#         "  )"
+#       )
+#     })
+#     paste(unlist(snippets), collapse = "\n\n")
+#   })
+
   # ────────────────────────────────────────────────────────────────────────────
   # Removed‐points code snippet (only those Confirm Removed)
   # ────────────────────────────────────────────────────────────────────────────
   output$removed_code <- renderText({
     # pulled_ts is the character‐vector of ts_str values that we have already “confirmed” as removed, for the current y‐variable
-    pulled_ts <- removed_ts[[input$yvar]] %||% character()
+    #pulled_ts <- removed_ts[[input$yvar]] %||% character()
+    pulled_ts <- confirmed_ts[[input$yvar]] %||% character()
     if (length(pulled_ts) == 0) {
       return("<!-- no points have been “Confirmed Remove” yet -->")
     }
@@ -1073,6 +1674,87 @@ server <- function(input, output, session) {
       "  )"
     )
   })
+
+
+  #UTC helper
+  #finish these!
+  # put near your other helpers
+  # Map offsets to friendlier labels
+  pretty_tz_label <- function(h) {
+    name <- switch(as.character(h),
+                   "-12"="Baker/Howland (UTC-12)",
+                   "-11"="Samoa (UTC-11)",
+                   "-10"="Hawaii–Aleutian (UTC-10)",
+                   "-9" ="Alaska (UTC−9)",
+                   "-8" ="Pacific (UTC−8)",
+                   "-7" ="Mountain (UTC−7)",
+                   "-6" ="Central (UTC−6)",
+                   "-5" ="Eastern (UTC−5)",
+                   "-4" ="Atlantic (UTC−4)",
+                   "-3" ="Argentina/Brazil (UTC−3)",
+                   "-2" ="UTC−2",                         # ← this is present
+                   "-1" ="Azores (UTC−1)",
+                   "0"  ="Coordinated Universal Time (UTC±0)",
+                   "1"  ="Central Europe (UTC+1)",
+                   "2"  ="Eastern Europe (UTC+2)",
+                   "3"  ="Moscow/East Africa (UTC+3)",
+                   "4"  ="Gulf (UTC+4)",
+                   "5"  ="Pakistan (UTC+5)",
+                   "6"  ="Bangladesh (UTC+6)",
+                   "7"  ="Indochina (UTC+7)",
+                   "8"  ="China/Western Australia (UTC+8)",
+                   "9"  ="Japan/Korea (UTC+9)",
+                   "10" ="AEST (UTC+10)",
+                   "11" ="New Caledonia (UTC+11)",
+                   "12" ="NZST/Fiji (UTC+12)",
+                   "13" ="Tonga (UTC+13)",
+                   "14" ="Line Islands (UTC+14)",
+                   sprintf("UTC%+d", h)
+    )
+    name
+  }
+
+
+  # Build labeled choices once (−12…+14)
+  observe({
+    offs   <- -12:14
+    values <- sprintf("UTC%+d", offs)
+    labels <- vapply(offs, pretty_tz_label, character(1))
+    names(values) <- labels
+
+    # keep current selection if present; otherwise default to UTC+0
+    sel <- isolate(input$data_offset)
+    if (is.null(sel) || !sel %in% values) sel <- "UTC+0"
+
+    updateSelectInput(session, "data_offset", choices = values, selected = sel)
+  })
+
+
+
+  # --- put near other helpers ---
+  nearest_stamp <- function(x, pool) {
+    pool[ which.min(abs(as.numeric(pool) - as.numeric(x))) ]
+  }
+
+  # Debounce slider changes so we only react after the user pauses/releases.
+  time_rng_raw <- reactive({ input$time_rng })
+  time_rng_debounced <- debounce(time_rng_raw, 150)   # 150–250ms feels snappy
+
+  # Replace your existing is_snapping/observeEvent(input$time_rng, ...) with this:
+  observeEvent(time_rng_debounced(), ignoreInit = TRUE, {
+    df <- df_by_year(); y <- input$yvar; req(df, y)
+    pool <- sort(unique(df$TIMESTAMP_START[!is.na(df[[y]]) & !is.na(df$TIMESTAMP_START)]))
+    if (length(pool) < 2) return()
+
+    tr   <- time_rng_debounced()
+    tr2  <- c(nearest_stamp(tr[1], pool), nearest_stamp(tr[2], pool))
+    if (!identical(tr, tr2)) {
+      updateSliderInput(session, "time_rng", value = tr2)
+    }
+  })
+
+
+
 
 
   # ────────────────────────────────────────────────────────────────────────────
@@ -1194,17 +1876,16 @@ server <- function(input, output, session) {
   # Reset Data → restore df_by_year() to orig_df() and clear all removal records
   # ────────────────────────────────────────────────────────────────────────────
   observeEvent(input$reset_data, {
-    # 1) restore the master data
     rv$df <- orig_df()
-
-    # 2) reset any year‐filter back to “All”
     updateSelectizeInput(session, "year_sel", selected = "All")
 
-    # 3) clear out all your selections
-    for (nm in names(reactiveValuesToList(removed_ts))) removed_ts[[nm]] <- NULL
+    for (nm in names(reactiveValuesToList(removed_ts)))   removed_ts[[nm]]   <- NULL
+    for (nm in names(reactiveValuesToList(confirmed_ts))) confirmed_ts[[nm]] <- NULL  # ✅ add this
+
     sel_keys(integer(0)); outlier_keys(integer(0))
     session$resetBrush("qc_plot")
   })
+
 }
 
 shinyApp(ui, server)

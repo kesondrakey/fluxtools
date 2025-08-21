@@ -424,7 +424,15 @@ apply_prm <- function(.data,
                       summarize = TRUE) {
 
   stopifnot(is.data.frame(.data))
+  summarize <- isTRUE(summarize)  # normalize flag
   rules <- .prm_rules()
+
+  # Always start with an empty tibble
+  summ <- tibble::tibble(
+    column = character(), family = character(),
+    min = numeric(), max = numeric(),
+    n_non_na_before = integer(), n_replaced = integer(), pct_replaced = numeric()
+  )
 
   if (!is.null(include)) {
     stopifnot(is.character(include))
@@ -435,6 +443,7 @@ apply_prm <- function(.data,
 
   before  <- .data
   applied <- list()
+  summ    <- NULL              # <-- ensure it exists
 
   for (pat in names(rules)) {
     lim   <- rules[[pat]]
@@ -451,7 +460,6 @@ apply_prm <- function(.data,
 
     for (col in cols) {
       x <- suppressWarnings(as.numeric(.data[[col]]))
-
       keep <- !is.na(x)
       if (!is.na(min_v)) keep <- keep & x >= min_v
       if (!is.na(max_v)) keep <- keep & x <= max_v
@@ -478,8 +486,6 @@ apply_prm <- function(.data,
       ) |>
       dplyr::arrange(dplyr::desc(n_replaced))
 
-    # ▶ If nothing was replaced anywhere, print the “no replacements” message
-    #   and return an EMPTY summary tibble.
     if (all(summ$n_replaced == 0L)) {
       if (note) message("PRM: no replacements made.")
       summ <- tibble::tibble(
@@ -487,13 +493,10 @@ apply_prm <- function(.data,
         min = numeric(), max = numeric(),
         n_non_na_before = integer(), n_replaced = integer(), pct_replaced = numeric()
       )
-
     } else if (note) {
-      # ▶ Only print the per-column notes when there WAS at least one replacement.
       u_vec  <- .prm_units()
       base_u <- u_vec
       names(base_u) <- sub("^\\^(.+)\\(\\$\\|_\\)$", "\\1", names(u_vec))
-
       fmt <- function(z) ifelse(is.na(z), "NA", as.character(z))
       lines <- mapply(function(col, fam, lo, hi, nrep, pct) {
         paste0(
@@ -501,15 +504,12 @@ apply_prm <- function(.data,
           "  expected units: ", base_u[[fam]], ", PRM range: ", fmt(lo), " to ", fmt(hi), "\n",
           "  ", nrep, " values set to NA (", sprintf("%.1f", pct), "% of data)"
         )
-      },
-      summ$column, summ$family, summ$min, summ$max, summ$n_replaced, summ$pct_replaced,
+      }, summ$column, summ$family, summ$min, summ$max, summ$n_replaced, summ$pct_replaced,
       SIMPLIFY = TRUE)
-
-      message("PRM summary:\n", paste(lines, collapse = "\n"))
+      message(paste0("PRM summary:\n", paste(lines, collapse = "\n")))
     }
-
   } else {
-    # ▶ No matching columns at all
+    # No matching columns at all
     summ <- tibble::tibble(
       column = character(), family = character(),
       min = numeric(), max = numeric(),
@@ -518,7 +518,28 @@ apply_prm <- function(.data,
     if (note) message("PRM: no replacements made.")
   }
 
-  # ▶ Make the returns explicit and LAST. Nothing after this.
-  if (!summarize) return(.data)
-  return(list(data = .data, summary = summ))
+  # --- normalize summary type & return shape (ALWAYS a tibble)
+  if (is.null(summ)) {
+    summ <- data.frame(
+      column = character(), family = character(),
+      min = numeric(), max = numeric(),
+      n_non_na_before = integer(), n_replaced = integer(), pct_replaced = numeric(),
+      stringsAsFactors = FALSE
+    )
+  }
+  if (!inherits(summ, "data.frame")) {
+    summ <- as.data.frame(summ, stringsAsFactors = FALSE)
+  }
+  if (requireNamespace("tibble", quietly = TRUE)) {
+    summ <- tibble::as_tibble(summ)
+  } else {
+    class(summ) <- c("tbl_df","tbl",class(summ))
+  }
+
+  if (!inherits(summ, "data.frame")) summ <- as.data.frame(summ, stringsAsFactors = FALSE)
+  if (requireNamespace("tibble", quietly = TRUE)) summ <- tibble::as_tibble(summ)
+
+  if (!isTRUE(summarize)) return(.data)
+  list(data = .data, summary = summ)
+
 }
