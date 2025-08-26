@@ -424,7 +424,7 @@ apply_prm <- function(.data,
                       summarize = TRUE) {
 
   stopifnot(is.data.frame(.data))
-  summarize <- isTRUE(summarize)  # normalize flag
+  summarize <- isTRUE(summarize)
   rules <- .prm_rules()
 
   # --- Always start with an empty tibble
@@ -479,11 +479,14 @@ apply_prm <- function(.data,
     }
   }
 
+  # --- Build summary + console messages
   if (length(applied)) {
-    # Avoid dplyr::bind_rows() NULL behavior; guard rbind
     summ_df <- do.call(rbind, applied)
-    summ    <- tibble::as_tibble(summ_df)
-    summ <- summ |>
+    # capture totals BEFORE possibly replacing `summ`
+    ncols_checked <- length(unique(summ_df$column))
+    nrep_total    <- sum(summ_df$n_replaced, na.rm = TRUE)
+
+    summ <- tibble::as_tibble(summ_df) |>
       dplyr::mutate(
         pct_replaced = ifelse(n_non_na_before > 0, 100 * n_replaced / n_non_na_before, 0)
       ) |>
@@ -491,7 +494,6 @@ apply_prm <- function(.data,
 
     if (all(summ$n_replaced == 0L)) {
       if (note) message("PRM: no replacements made.")
-      # keep `summ` as the canonical EMPTY tibble
       summ <- empty_tbl
     } else if (note) {
       u_vec  <- .prm_units()
@@ -508,33 +510,27 @@ apply_prm <- function(.data,
       message(paste0("PRM summary:\n", paste(lines, collapse = "\n")))
     }
   } else {
-    # No matching columns at all
+    ncols_checked <- 0L
+    nrep_total    <- 0L
     if (note) message("PRM: no replacements made.")
     summ <- empty_tbl
   }
 
   # --- normalize summary type & return shape (ALWAYS a tibble)
-  if (is.null(summ)) {
-    summ <- data.frame(
-      column = character(), family = character(),
-      min = numeric(), max = numeric(),
-      n_non_na_before = integer(), n_replaced = integer(), pct_replaced = numeric(),
-      stringsAsFactors = FALSE
-    )
-  }
-  if (!inherits(summ, "data.frame")) {
-    summ <- as.data.frame(summ, stringsAsFactors = FALSE)
-  }
-  if (requireNamespace("tibble", quietly = TRUE)) {
-    summ <- tibble::as_tibble(summ)
-  } else {
-    class(summ) <- c("tbl_df","tbl",class(summ))
-  }
-
   if (!inherits(summ, "data.frame")) summ <- as.data.frame(summ, stringsAsFactors = FALSE)
   if (requireNamespace("tibble", quietly = TRUE)) summ <- tibble::as_tibble(summ)
 
-  if (!summarize) return(.data)
-  list(data = .data, summary = summ)
+  # unified final message that always shows summarize mode
+  if (note) {
+    message(sprintf("PRM run (summarize=%s): %d columns checked; %d values set to NA.",
+                    as.character(summarize), ncols_checked, nrep_total))
+  }
 
+  if (!summarize) {
+    return(.data)  # data.frame path
+  } else {
+    out <- list(data = .data, summary = summ, include = include)
+    class(out) <- c("fluxtools_prm", "list")
+    return(out)   # list-with-summary path
+  }
 }
