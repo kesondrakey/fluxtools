@@ -15,7 +15,7 @@ library(fluxtools)
 
 # Overview
 
-**fluxtools** is an R package that provides an interactive Shiny‐based QA/QC environment for data in the AmeriFlux BASE format. In just a few clicks, you can:
+**fluxtools** is an R package that provides an interactive Shiny‐based QA/QC environment to explore or remove data in the AmeriFlux BASE (or Fluxnet) format. In just a few clicks, you can:
 
 1. Upload eddy covariance data in a .csv format (AmeriFlux standard naming and timestamp conventions)
 2. Visualize any two numeric columns against time (or each other)
@@ -32,7 +32,7 @@ This vignette shows you how to install, launch, and use the main Shiny app—`ru
 
 You can install **fluxtools** from CRAN, or directly from GitHub:
 
-```r
+```{r, eval=FALSE}
 # Install from CRAN 
 install.packages("fluxtools")
 
@@ -45,7 +45,7 @@ devtools::install_github("kesondrakey/fluxtools")
 # Launching the Shiny App
 Load **fluxtools** and launch the QA/QC application:
 
-```r
+```{r, eval=FALSE}
 library(fluxtools)
 
 # Run the app
@@ -55,7 +55,7 @@ run_fluxtools()
 
  Example workflow
 
-1. **Upload**: Select your AmeriFlux-style CSV (e.g., `US_VT1_HH_202401010000_202501010000.csv`). Files can be up to 500MB (larger file sizes might be harder on the Shiny interface)
+1. **Upload**: Select your AmeriFlux-style CSV (e.g., `US_VT1_HH_202401010000_202501010000.csv`). Files can be up to 1GB (larger file sizes might be harder on the Shiny interface)
 
 2. **Choose Year(s)**: By default “all” is selected, but you can subset to specific years
 
@@ -63,7 +63,7 @@ run_fluxtools()
 
 4. **Select data**: Use the box or lasso to select points. This populates the “Current” code box with something like:
 
-   ```r
+```{r, eval=FALSE}
    df <- df %>%
      mutate(
        FC_1_1_1 = case_when(
@@ -73,7 +73,7 @@ run_fluxtools()
          TRUE ~ FC_1_1_1
        )
      )
-   ```
+```
    
 5. **Flag data and Accumulate code**: With points still selected, click “Flag data.” Selected points turn orange, and code is appended to the “Accumulated” box, allowing multiple selections per session.
 
@@ -83,7 +83,7 @@ run_fluxtools()
  
 8. **Switch variables**: Change y to any other variable (e.g., `SWC_1_1_1`) and select more points. Click “Flag data” Code for both variables to appear:
 
- ```r
+```{r, eval=FALSE}
    df <- df %>%
      mutate(
        FC_1_1_1 = case_when(
@@ -103,7 +103,7 @@ run_fluxtools()
          TRUE ~ SWC_1_1_1
        )
      )
-   ```
+```
    
 9. **Compare variables**: Change to variables you would like to compare (e.g., change y to `TA_1_1_1` and x to `T_SONIC_1_1_1`). The app computes an R² via simple linear regression. The top R² is based on points before removals, and once data is selected, a second R² will pop up - calculating the linear regression assuming the selected points have been removed
 
@@ -115,7 +115,10 @@ run_fluxtools()
 
 13. **Reload original data**: Make a mistake or want a fresh start? Click Reload original data to reload the .csv from above to start over
 
-14. **Export cleaned data**: Download the cleaned .csv reflecting your confirmed removals. This button will download a zip file containing your .csv, reflecting changes from using the "apply removals" button, and includes a compiled R script with the R code for those removals.
+14. **Export cleaned data**: Download a ZIP containing:
+- A cleaned CSV (with applied NAs)
+- An R script that reproduces your removals
+- Optional PRM summary when used (see below)
 
 
 # Physical Boundary Module (PRM) function:
@@ -126,7 +129,7 @@ Columns containing `"QC"` are skipped by default. No columns are removed.
 Source of ranges: *AmeriFlux Technical Documents, Table A1 (Physical Range Module)*.
 
 ## Quick start 
-```{r}
+```{r, eval=FALSE}
 # tiny demo dataset with a few out-of-range values
 set.seed(1)
 df <- tibble::tibble(
@@ -157,45 +160,21 @@ df_filtered_swc_P <- apply_prm(df, include = c("SWC", "P"))
 
 
 ## Physical Range Module Values
-```{r prm-rules-table, echo=FALSE, message=FALSE}
-library(dplyr)
-library(knitr)
+```{r prm_rules_table_final, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+# Force kable to emit HTML
+old <- options(knitr.table.format = "html"); on.exit(options(old), add = TRUE)
 
-rules_tbl <- get_prm_rules() |>
-  transmute(
-    Variable    = variable,
-    Description = description,
-    Units       = units,
-    'Min to Max' = sprintf("%s to %s",
-                           ifelse(is.na(min), "NA", min),
-                           ifelse(is.na(max), "NA", max))
-  ) |>
-  arrange(Variable)
-
-note_txt <- if (knitr::is_latex_output()) {
-  "\\emph{Source: AmeriFlux Technical Documents}"
-} else {
-  "<em>Source: AmeriFlux Technical Documents</em>"
-}
-
-use_kableExtra <- requireNamespace("kableExtra", quietly = TRUE)
 tbl <- fluxtools::get_prm_rules()
-if (use_kableExtra) {
-  kableExtra::kbl(tbl, booktabs = TRUE) |>
-    kableExtra::kable_styling(full_width = FALSE)
-} else {
-  knitr::kable(tbl)
-}
 
+# Drop the regex column that causes the | escaping mess
+tbl <- tbl[, c("variable", "min", "max", "description", "units")]
+names(tbl) <- c("Variable", "Min", "Max", "Description", "Units")
 
-# kbl(rules_tbl,
-#     caption = "Physical Range Module (PRM) bounds",
-#     booktabs = TRUE, escape = FALSE) |>
-#   kable_styling(full_width = FALSE, latex_options = c("threeparttable")) |>
-#   footnote(general = note_txt, general_title = "", escape = FALSE)
+# Plain HTML table from knitr (no extra packages)
+knitr::kable(tbl, format = "html", escape = TRUE)
+
 
 ```
-
 
 
 *Fluxtools is an independent project and is not affiliated with or endorsed by the AmeriFlux Network. “AmeriFlux” is a registered trademark of Lawrence Berkeley National Laboratory and is used here for identification purposes only.*
