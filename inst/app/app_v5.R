@@ -864,21 +864,25 @@ server <- function(input, output, session) {
   ##
 
 
+
+
   observeEvent(input$time_flag, {
     tr <- input$time_rng; req(tr)
     df <- df_by_year()
     idx <- which(df$TIMESTAMP_START >= tr[1] & df$TIMESTAMP_START <= tr[2])
     if (!length(idx)) { showNotification("No points in that time range.", type = "message"); return() }
+
     rows <- df$.row[idx]
     sel_keys(unique(c(isolate(sel_keys()), rows)))
     ts <- df$ts_str[idx]
-    # add to *current Y variable’s* removal set (that’s the one you’ll mutate on “Apply removals”)
-    v <- input$yvar
+
     for (v in vars_to_edit()) {
       old <- removed_ts[[v]] %||% character()
       removed_ts[[v]] <- unique(c(old, ts))
     }
 
+    # 👇 important: kill any stale plot selection so Apply reads staged, not brush
+    session$resetBrush("qc_plot")
   })
 
   observeEvent(input$time_flag_out, {
@@ -886,16 +890,20 @@ server <- function(input, output, session) {
     df <- df_by_year()
     idx <- which(df$TIMESTAMP_START < tr[1] | df$TIMESTAMP_START > tr[2])
     if (!length(idx)) { showNotification("No points outside that time range.", type = "message"); return() }
+
     rows <- df$.row[idx]
     sel_keys(unique(c(isolate(sel_keys()), rows)))
     ts <- df$ts_str[idx]
-    v <- input$yvar
+
     for (v in vars_to_edit()) {
       old <- removed_ts[[v]] %||% character()
       removed_ts[[v]] <- unique(c(old, ts))
     }
 
+    # 👇 same here
+    session$resetBrush("qc_plot")
   })
+
 
   # returns +3 for "UTC+3", -5 for "UTC-5"
   # --- helpers ---
