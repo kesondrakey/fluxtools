@@ -1,4 +1,7 @@
-#goal: variable plot overlay option where you can filter out data on multiple variables at a time. each variable will be a different color on the same plot
+#Goal: UTC offset inside the app
+#Add PRM functionality inside the app (able to see selected points when selected, toggle removal on or off)
+#PRM description and table inside the helper tool inside the (?)
+
 
 library(shiny)
 library(plotly)
@@ -6,23 +9,50 @@ library(dplyr)
 library(bslib)     # for theming
 library(fluxtools)
 library(bslib)
-library(shinyWidgets) #for time selector
 
+
+# #DEV ONLY
+# #doesnt work for PRM
+# # DEV ONLY: auto-load local fluxtools when running from its repo
+# if (interactive() && requireNamespace("pkgload", quietly = TRUE)) {
+#   desc_up1 <- file.path("..", "DESCRIPTION")
+#   if (file.exists(desc_up1)) {
+#     pkg <- tryCatch(read.dcf(desc_up1, "Package")[1, 1], error = function(e) NA_character_)
+#     if (identical(pkg, "fluxtools")) {
+#       try(pkgload::load_all("..", export_all = FALSE, helpers = TRUE, quiet = TRUE), silent = TRUE)
+#     }
+#   }
+# }
+# #END DEV ONLY
 
 # Allow larger uploads (here: up to 1gb)
 options(shiny.maxRequestSize = 1024 * 1024 * 1024) #1gb
 
 ## ── 1) Theme ───────────────────────────────────────────────────────
+# light_theme <- bs_theme(
+#   bootswatch = "cerulean",
+#   base_font_size  = "18px",    # ← bump this up (default is 14px)
+#   font_scale      = 1.2        # ← or scale everything to 120%
+# )
+
 light_theme <- bs_theme(
-  bootswatch = "cerulean",
-  base_font_size  = "18px",    # ← bump this up (default is 14px)
-  font_scale      = 1.2        # ← or scale everything to 120%
-)
+  bootswatch     = "cerulean",
+  base_font_size = "18px",
+  font_scale     = 1.2
+) %>%
+  bs_add_rules("
+    body {
+      background: linear-gradient(135deg, #EEF7FC, #E9ECEF);
+      color: #EEE;
+    }
+  ")
+
 
 
 dark_theme <- bs_theme(
   version        = 5,
-  bootswatch     = "slate",
+  #bootswatch     = "darkly",
+  bootswatch     = "slate", #Vapor, darkly
   base_font_size  = "18px",    # ← bump this up (default is 14px)
   font_scale      = 1.2,        # ← or scale everything to 120%
   fg             = "#EEE",
@@ -38,16 +68,6 @@ ui <- fluidPage(
   theme = light_theme,
 
   tags$head(
-    tags$style(HTML("
-  /* shrink tables inside modals + PRM help */
-  #help_prm_table, #prm_summary_tbl, .modal-body table {
-    font-size: 0.8rem;
-  }
-  /* wrap tables so they scroll instead of overflowing */
-  .table-wrap { max-width:100%; overflow-x:auto; }
-")),
-
-
     tags$style(HTML('
       h5 { font-weight: 600; letter-spacing: .2px; }
       .card { box-shadow: 0 .25rem .75rem rgba(0,0,0,.05); }
@@ -72,32 +92,31 @@ ui <- fluidPage(
       html[data-bs-theme="slate"] .accordion > .accordion-item { border-color:#444; box-shadow:0 .25rem .75rem rgba(0,0,0,.25); }
     ')),
 
-tags$script(HTML("
-document.addEventListener('keydown', function(e){
-  // when focus is inside the Selectize control for prm_families
-  var wrap = document.querySelector('#prm_families + .selectize-control');
-  if (!wrap) return;
-  var hasFocus = wrap.contains(document.activeElement);
-  if (hasFocus && e.key === 'Enter') {
-    var btn = document.getElementById('apply_prm_btn');
-    if (btn) btn.click();
-  }
-});
-")),
-
-#overlay box
-tags$script(HTML("
-document.addEventListener('keydown', function(e){
-  var wrap = document.querySelector('#overlay_vars + .selectize-control');
-  if (!wrap) return;
-  var inBox = wrap.contains(document.activeElement);
-  if (inBox && e.key === 'Enter') {
-    var btn = document.getElementById('overlay_apply');
-    if (btn) btn.click();
-  }
-});
-")),
-
+#     tags$style(HTML('
+#   /* Cerulean-sized tooltips */
+#   .tooltip.tt-compact {
+#     --bs-tooltip-bg: #111;
+#     --bs-tooltip-color: #fff;
+#     --bs-tooltip-opacity: 1;
+#     --bs-tooltip-padding-x: .50rem;
+#     --bs-tooltip-padding-y: .35rem;
+#     --bs-tooltip-border-radius: .375rem;
+#     --bs-tooltip-max-width: 260px;
+#     --bs-tooltip-box-shadow: 0 .25rem .75rem rgba(0,0,0,.15);
+#     --bs-tooltip-font-size: .8rem !important; /* <- same as Cerulean/Bootstrap sm */
+#     z-index: 1080;
+#   }
+#   .tooltip.tt-compact .tooltip-inner {
+#     font-size: var(--bs-tooltip-font-size) !important;
+#     line-height: 1.25;
+#     white-space: normal;
+#     max-width: 300px;
+#   }
+#   html[data-bs-theme="slate"] .tooltip.tt-compact {
+#     --bs-tooltip-bg: #1f1f1f;
+#     --bs-tooltip-color: #f3f3f3;
+#   }
+# ')),
 
     tags$script(HTML("
 
@@ -194,11 +213,6 @@ document.addEventListener('keydown', function(e){
     )
   ),  # ← comma was missing after this
 
-    #time selector
-# --- Start/End date-time pickers (two boxes) ---
-
-    ###
-
 
   uiOutput("subtitle"),
 
@@ -284,7 +298,6 @@ document.addEventListener('keydown', function(e){
         column(
           6,
           tags$label(`for` = "xvar", "X-axis:", style  = "width:100%; font-weight:500;"),
-
           tagAppendAttributes(
             selectInput("xvar", NULL, choices = NULL, width = "100%"),
             'data-bs-toggle' = "tooltip",
@@ -292,34 +305,7 @@ document.addEventListener('keydown', function(e){
           )
         )
       ),
-
-    # --- Overlay mode ---
-    checkboxInput("overlay_mode", "Overlay & multi-flag", FALSE),
-
-    conditionalPanel(
-      "input.overlay_mode",
-      div(class = "d-flex align-items-end gap-2",
-          div(style="flex:1;",
-              selectizeInput(
-                "overlay_vars", "Overlay variables",
-                choices = NULL, multiple = TRUE,
-                options = list(placeholder = "Choose ≥1 variables",
-                               plugins = list("remove_button")),
-                width = "100%"
-              )
-          )
-      ),
-      checkboxInput("overlay_include_y", "Include current Y variable", TRUE)
-    )
-
-      ,
-
-
-
-
-
       hr(),
-
 
       tags$h5("Interact with data"),
       fluidRow(
@@ -370,7 +356,6 @@ document.addEventListener('keydown', function(e){
         id = "qa_sections",
         open = FALSE,
 
-#flag by range
         bslib::accordion_panel(
           title = tagList(icon("sliders-h"), "Flag by value range"),
           value = "range",
@@ -386,7 +371,7 @@ document.addEventListener('keydown', function(e){
 
 
 
-#flag by time
+
         bslib::accordion_panel(
           title = tagList(icon("clock"), "Flag by time"),
           value = "time",
@@ -399,41 +384,67 @@ document.addEventListener('keydown', function(e){
             step  = 3600
           ),
           fluidRow(
-            column(
-              6,
-              shinyWidgets::airDatepickerInput(
-                inputId    = "start_dt",
-                label      = "Start:",
-                timepicker = TRUE,
-                autoClose  = TRUE,
-                placeholder = "Select start"
-              )
-            ),
-            column(
-              6,
-              shinyWidgets::airDatepickerInput(
-                inputId    = "end_dt",
-                label      = "End:",
-                timepicker = TRUE,
-                autoClose  = TRUE,
-                placeholder = "Select end"
-              )
-            )
-          ),
-
-
-          fluidRow(
             column(6, actionButton("time_flag",     "Flag inside",  class = "btn btn-primary w-100")),
             column(6, actionButton("time_flag_out", "Flag outside", class = "btn btn-outline-primary w-100"))
           )
             ),
 
 
-
-#Select outliers
         bslib::accordion_panel(
-          title = tagList(icon("wave-square"), "Select outliers"),
-          #title = tagList(icon("bullseye"), "Select outliers"),
+          title = tags$span(
+
+            class = "d-inline-flex align-items-center gap-2",
+            icon("sliders"),
+            tags$span(
+              HTML("Physical Range Module&nbsp;(PRM)"),
+              'data-bs-toggle'   = "tooltip",
+              'data-bs-placement' = "right",
+              title              = "Clamp variables to possible physical ranges; out-of-range → NA"
+            )
+          ),
+          value = "prm",
+
+          fluidRow(
+            column(
+              6,
+              actionButton(
+                "apply_prm_btn", "Apply PRM",
+                width = "100%", icon = icon("sliders-h"),
+                'data-bs-toggle'="tooltip",
+                title="Clamp to PRM bounds; out-of-range set to NA. Reversible."
+              )
+            ),
+            column(
+              6,
+              actionButton(
+                "undo_prm_btn", "Undo PRM",
+                width = "100%", icon = icon("undo"),
+                'data-bs-toggle'="tooltip",
+                title="Reverts only values changed by the last PRM apply. Other edits unaffected."
+              )
+            )
+          ),
+
+
+          tags$details(
+            tags$summary("PRM options"),
+            tagAppendAttributes(
+              selectizeInput(
+                "prm_families", "Variables (optional):",
+                choices = NULL, multiple = TRUE,
+                options  = list(
+                  placeholder = "Default: All relevant variables matched by PRM",
+                  plugins = list("remove_button")
+                )
+              ),
+              'data-bs-toggle'="tooltip",
+              title="Type base names like SWC, P, TA, CO2 (we match columns by name prefix, e.g. ^SWC($|_)). Leave empty to apply to all"
+            )
+          )
+        ),
+
+        bslib::accordion_panel(
+          title = tagList(icon("bullseye"), "Select outliers"),
           value = "outliers",
           tags$h5("Select outliers"),
           sliderInput("sd_thresh", "Highlight points beyond σ:", min = 0, max = 3, value = 0, step = 1),
@@ -458,69 +469,6 @@ document.addEventListener('keydown', function(e){
           )
         ),
 
-
-#prm module
-bslib::accordion_panel(
-  title = tags$span(
-
-    class = "d-inline-flex align-items-center gap-2",
-    icon("seedling"),  # far = Font Awesome Regular
-    #icon("sliders"),
-    tags$span(
-      HTML("Physical Range Module&nbsp;(PRM)"),
-      'data-bs-toggle'   = "tooltip",
-      'data-bs-placement' = "right",
-      title              = "Clamp variables to possible physical ranges; out-of-range → NA"
-    )
-  ),
-  value = "prm",
-
-  fluidRow(
-    column(
-      6,
-      actionButton(
-        "apply_prm_btn", "Apply PRM",
-        width = "100%", icon = icon("sliders-h"),
-        'data-bs-toggle'="tooltip",
-        title="Clamp to PRM bounds; out-of-range set to NA. Reversible."
-      )
-    ),
-    column(
-      6,
-      actionButton(
-        "undo_prm_btn", "Undo PRM",
-        width = "100%", icon = icon("undo"),
-        'data-bs-toggle'="tooltip",
-        title="Reverts only values changed by the last PRM apply. Other edits unaffected."
-      )
-    )
-  ),
-
-
-  tags$details(
-    tags$summary("PRM options"),
-    tagAppendAttributes(
-      selectizeInput(
-        "prm_families", "Variables (optional):",
-        choices = NULL, multiple = TRUE,
-        options = list(
-          placeholder = "Default: All relevant variables matched by PRM",
-          plugins = list("remove_button")
-        )
-      ),
-      'data-bs-toggle'="tooltip",
-      title="Type base names like SWC, P, TA, CO2 (we match columns by name prefix, e.g. ^SWC($|_)). Leave empty to apply to all"
-    ),
-    div(class="d-grid gap-2 mt-2",
-        actionButton("apply_prm_subset", "Apply PRM to selected", icon = icon("play"))
-    )
-  )
-
-),
-
-
-
-#code generation
         bslib::accordion_panel(
           title = tagList(icon("code"), "Code generation"),
           value = "code",
@@ -596,18 +544,9 @@ bslib::accordion_panel(
       hr(),
 
       fluidRow(
-        # inside the same fluidRow as the ZIP/download
         column(
           4,
-          downloadButton("download_csv", "Save cleaned CSV",
-                         icon = icon("file-csv"), width = "100%"),
-          'data-bs-toggle' = "tooltip",
-          title = "Download just the cleaned CSV (keeps original TIMESTAMP_START strings)"
-        ),
-
-        column(
-          4,
-          downloadButton("download_data", "Export zip file", icon = icon("file-archive"), width="100%"),
+          downloadButton("download_data", "Export cleaned data", icon = icon("file-archive"), width="100%"),
           'data-bs-toggle' = "tooltip",
           title = "Download a .zip containing the cleaned CSV (with NAs applied using the 'Apply Removals' button) and the removal R-script"
         ),
@@ -637,10 +576,6 @@ bslib::accordion_panel(
 
 server <- function(input, output, session) {
 
-  #NA strings for r script output
-  NA_STRINGS <- c("NA","NaN","","-9999","-9999.0","-9999.00","-9999.000")
-
-
 
   #PRM
   # --- init reactive stores early (so we can use rv immediately) ---
@@ -649,8 +584,7 @@ server <- function(input, output, session) {
     df_before_prm = NULL,
     prm_active = FALSE,
     prm_summary = NULL,
-    prm_mask = NULL,
-    prm_include = NULL   # <- add this
+    prm_mask = NULL
   )
 
   last_sel <- reactiveValues(x = NULL, y = NULL)
@@ -658,44 +592,23 @@ server <- function(input, output, session) {
   observeEvent(input$xvar, { last_sel$x <- input$xvar }, ignoreInit = TRUE)
   observeEvent(input$yvar, { last_sel$y <- input$yvar }, ignoreInit = TRUE)
 
-  #export csv
-  output$download_csv <- downloadHandler(
-    filename = function() paste0("fluxtools_cleaned_", Sys.Date(), ".csv"),
-    content  = function(file) {
-      req(rv$df)
-      # Start from the fully edited data in rv$df
-      out <- rv$df
-      # Put back the original timestamp string, then drop helper cols
-      out$TIMESTAMP_START <- out$raw_ts
-      out <- dplyr::select(out, -raw_ts, -ts_str, -.row)
-      utils::write.csv(out, file, row.names = FALSE, na = "NA")
-    }
-  )
-
-
 
   #UTC check
 
   output$tz_check <- renderText({
     df <- rv$df
-    if (is.null(df) || NROW(df) == 0) return("Upload a CSV to see timestamp parsing…")
+    if (is.null(df) || !nrow(df)) return("Upload a CSV to see timestamp parsing…")
 
     off <- data_off_hr()
     rec <- data_tz()
 
     paste0(
-      "TIMESTAMP_START details:\n",
-      "  raw value (as stored):   ", df$raw_ts[1], "\n",
-      sprintf("  displayed (UTC%+d):       %s\n", off,
+      "First row:\n",
+      "  raw:                   ", df$raw_ts[1], "\n",
+      sprintf("  recorded clock (UTC%+d): %s\n", off,
               format(df$TIMESTAMP_START[1] + off*3600, "%Y-%m-%d %H:%M %Z", tz = rec)),
-      "  absolute UTC reference:  ", format(df$TIMESTAMP_START[1], "%Y-%m-%d %H:%M %Z", tz = "UTC"),
-      "\n\nNote (display only):\n",
-      sprintf("- Viewing times with a fixed UTC offset of UTC%+d (%s); daylight saving time is not applied\n", off, rec),
-      "- This setting affects how times are shown in the app only\n",
-      "- Selections, removals, and exports are keyed to the original TIMESTAMP_START string; underlying values are unchanged\n",
-      "- Exported files preserve the original timestamp column from the input\n"
+      "  absolute UTC:          ", format(df$TIMESTAMP_START[1], "%Y-%m-%d %H:%M %Z", tz = "UTC")
     )
-
   })
 
 
@@ -713,35 +626,6 @@ server <- function(input, output, session) {
                     error = function(e) NULL)
     if (is.null(sel)) integer(0) else sel$key
   })
-
-  #overlay helper
-  # which variables should edits apply to?
-  vars_to_edit <- reactive({
-    base <- if (isTRUE(input$overlay_mode) && length(input$overlay_vars))
-      unique(c(input$overlay_vars, if (isTRUE(input$overlay_include_y)) input$yvar))
-    else input$yvar
-    if (is.null(rv$df)) base else intersect(base, names(rv$df))
-  })
-
-
-  # selection → timestamps (ts_str)
-  selected_ts <- reactive({
-    # coerce to data.frame to make NROW reliable
-    sel <- tryCatch({
-      d <- plotly::event_data("plotly_selected", source = "qc_plot")
-      if (is.null(d)) NULL else as.data.frame(d)
-    }, error = function(e) NULL)
-
-    if (is.null(sel) || NROW(sel) == 0) return(character(0))
-
-    k <- as.character(sel$key)
-    k <- k[!is.na(k) & nzchar(k)]
-    # keys may be "YYYY...||VAR" in overlay; keep only the timestamp part
-    k <- sub("^(.*)\\|\\|.*$", "\\1", k)
-    unique(k)
-  })
-
-
 
 
   # small helper used later
@@ -807,91 +691,36 @@ server <- function(input, output, session) {
 
   observeEvent(input$yvar, {
     if (isTRUE(input$rng_link_y) && !is_syncing()) {
-      is_syncing(TRUE); on.exit(is_syncing(FALSE), add = TRUE)
+      is_syncing(TRUE)
+      on.exit(is_syncing(FALSE), add = TRUE)
       if (!is.null(input$yvar) && !identical(input$rng_var, input$yvar)) {
         freezeReactiveValue(input, "rng_var")
         updateSelectInput(session, "rng_var", selected = input$yvar)
       }
     }
 
-    # Clear brush/selection
+    # Clear current brush/selection and rebuild orange “accumulated” for this yvar
     sel_keys(integer(0))
     session$resetBrush("qc_plot")
-
-    # Rebuild orange “accumulated” from ALL vars we’re editing (overlay-aware)
-    ts_all <- unique(unlist(lapply(vars_to_edit(), function(v) removed_ts[[v]] %||% character())))
-    if (length(ts_all)) {
-      matching_rows <- which(df_by_year()$ts_str %in% ts_all)
+    current_ts <- removed_ts[[ input$yvar ]] %||% character()
+    if (length(current_ts)) {
+      matching_rows <- which(df_by_year()$ts_str %in% current_ts)
       sel_keys(matching_rows)
     }
   }, ignoreInit = TRUE)
-
-  #flag helper
-  observeEvent(input$add_sel, {
-    pairs <- selected_pairs()
-    if (nrow(pairs) == 0) return()
-
-    # only keep vars that exist in df
-    keep_vars <- intersect(unique(pairs$var), names(rv$df) %||% character())
-    if (!length(keep_vars)) return()
-
-    rows <- df_by_year()$.row[df_by_year()$ts_str %in% pairs$ts]
-    sel_keys(unique(c(isolate(sel_keys()), rows)))
-
-    for (v in keep_vars) {
-      ts_v <- unique(pairs$ts[pairs$var == v])
-      old  <- removed_ts[[v]] %||% character()
-      removed_ts[[v]] <- unique(c(old, ts_v))
-    }
-
-    showNotification(
-      sprintf("Flagged %d timestamp(s) across %d variable(s).",
-              length(unique(pairs$ts[pairs$var %in% keep_vars])), length(keep_vars)),
-      type = "message", duration = 2
-    )
-  })
-
-  observeEvent(input$remove_acc, {
-    pairs <- selected_pairs()
-    if (nrow(pairs) == 0) return()
-
-    keep_vars <- intersect(unique(pairs$var), names(rv$df) %||% character())
-    if (!length(keep_vars)) return()
-
-    rows <- df_by_year()$.row[df_by_year()$ts_str %in% pairs$ts]
-    sel_keys(setdiff(isolate(sel_keys()), rows))
-
-    byv <- split(pairs$ts[pairs$var %in% keep_vars], pairs$var[pairs$var %in% keep_vars])
-    for (v in names(byv)) {
-      old <- removed_ts[[v]] %||% character()
-      removed_ts[[v]] <- setdiff(old, unique(byv[[v]]))
-    }
-  })
-
-
-
-  ##
-
-
-
 
   observeEvent(input$time_flag, {
     tr <- input$time_rng; req(tr)
     df <- df_by_year()
     idx <- which(df$TIMESTAMP_START >= tr[1] & df$TIMESTAMP_START <= tr[2])
     if (!length(idx)) { showNotification("No points in that time range.", type = "message"); return() }
-
     rows <- df$.row[idx]
     sel_keys(unique(c(isolate(sel_keys()), rows)))
     ts <- df$ts_str[idx]
-
-    for (v in vars_to_edit()) {
-      old <- removed_ts[[v]] %||% character()
-      removed_ts[[v]] <- unique(c(old, ts))
-    }
-
-    # 👇 important: kill any stale plot selection so Apply reads staged, not brush
-    session$resetBrush("qc_plot")
+    # add to *current Y variable’s* removal set (that’s the one you’ll mutate on “Apply removals”)
+    v <- input$yvar
+    old <- removed_ts[[v]] %||% character()
+    removed_ts[[v]] <- unique(c(old, ts))
   })
 
   observeEvent(input$time_flag_out, {
@@ -899,20 +728,13 @@ server <- function(input, output, session) {
     df <- df_by_year()
     idx <- which(df$TIMESTAMP_START < tr[1] | df$TIMESTAMP_START > tr[2])
     if (!length(idx)) { showNotification("No points outside that time range.", type = "message"); return() }
-
     rows <- df$.row[idx]
     sel_keys(unique(c(isolate(sel_keys()), rows)))
     ts <- df$ts_str[idx]
-
-    for (v in vars_to_edit()) {
-      old <- removed_ts[[v]] %||% character()
-      removed_ts[[v]] <- unique(c(old, ts))
-    }
-
-    # 👇 same here
-    session$resetBrush("qc_plot")
+    v <- input$yvar
+    old <- removed_ts[[v]] %||% character()
+    removed_ts[[v]] <- unique(c(old, ts))
   })
-
 
   # returns +3 for "UTC+3", -5 for "UTC-5"
   # --- helpers ---
@@ -924,11 +746,6 @@ server <- function(input, output, session) {
     if (off == 0) "UTC" else paste0("Etc/GMT", if (off < 0) "+" else "-", abs(off))  # POSIX sign flip
   })
 
-  #Date selection helper
-  to_view_time   <- function(x) as.POSIXct(as.numeric(x) + data_off_hr()*3600, origin="1970-01-01", tz = data_tz())
-  from_view_time <- function(x) as.POSIXct(as.numeric(x) - data_off_hr()*3600, origin="1970-01-01", tz = "UTC")
-
-
   # raw csv
   raw_df <- reactive({
     req(input$csv_file)
@@ -936,25 +753,33 @@ server <- function(input, output, session) {
       input$csv_file$datapath,
       stringsAsFactors = FALSE,
       colClasses = c(TIMESTAMP_START = "character"),
-      na.strings = NA_STRINGS
+      na.strings = "-9999"
     )
   })
 
   # parse respecting *data*'s stated offset, then map to absolute UTC
   shifted_df <- reactive({
-    df0 <- raw_df(); req(df0)
+    df0 <- raw_df(); req(df0, input$data_offset)
 
-    # keep only digits, right-pad minutes to 12 chars
+    # 1) keep only digits, then right-pad minutes to 12 chars
     digits <- gsub("[^0-9]", "", df0$TIMESTAMP_START %||% "")
-    digits <- substr(paste0(digits, "0000"), 1, 12)  # YYYYMMDDHH or YYYYMMDD
+    digits <- substr(paste0(digits, "0000"), 1, 12)  # handles YYYYMMDDHH or YYYYMMDD
 
-    # parse as absolute UTC — NO shifting here
-    ts_utc <- as.POSIXct(digits, format = "%Y%m%d%H%M", tz = "UTC")
+    # 2) parse as clock-time, then shift to absolute UTC by the *data's* stated offset
+    off_hr <- parse_utc_hours(input$data_offset)
 
-    if (!any(!is.na(ts_utc))) {
-      showNotification("Could not parse TIMESTAMP_START.", type = "error", duration = 8)
+    ts_parsed <- as.POSIXct(digits, format = "%Y%m%d%H%M", tz = "UTC")
+    ts_utc    <- ts_parsed - off_hr * 3600
+
+
+    #ts_parsed <- suppressWarnings(as.POSIXct(digits, format = "%Y%m%d%H%M", tz = "UTC"))
+    # if *everything* failed to parse, abort politely
+    if (!any(!is.na(ts_parsed))) {
+      showNotification("Could not parse TIMESTAMP_START. Check the column and the UTC offset.", type = "error", duration = 8)
       req(FALSE)
     }
+
+
 
     df0 %>%
       mutate(
@@ -979,58 +804,6 @@ server <- function(input, output, session) {
   })
 
   #PRM Server
-  observeEvent(input$apply_prm_subset, {
-    req(rv$df)
-
-
-    if (isTRUE(rv$prm_active)) {
-      showNotification("PRM already applied. Use “Undo PRM” to revert", type="message"); return()
-    }
-
-    fam <- input$prm_families
-    if (!length(fam)) {
-      showNotification("No variables selected. Using all PRM families present.", type="message")
-    }
-
-    rv$prm_include <- if (length(fam)) fam else NULL
-
-    before <- rv$df
-    res <- try(apply_prm_safe(before, include = if (length(fam)) fam else NULL), silent = TRUE)
-    if (inherits(res, "try-error")) {
-      showNotification("PRM function not available. Update or load 'fluxtools'.", type="error", duration=6); return()
-    }
-
-    after <- res$data
-
-    # Build mask & set state (same as your apply_prm_btn handler)
-    mask <- list(); common <- intersect(names(before), names(after))
-    for (nm in common) {
-      if (!is.numeric(before[[nm]]) || !is.numeric(after[[nm]])) next
-      idx <- which(!is.na(before[[nm]]) & is.na(after[[nm]]))
-      if (length(idx)) mask[[nm]] <- data.frame(.row = before$.row[idx], old = before[[nm]][idx])
-    }
-
-    rv$df <- after
-    rv$prm_summary <- res$summary
-    rv$prm_mask <- mask
-    rv$prm_active <- TRUE
-
-    ncols <- if (nrow(res$summary)) length(unique(res$summary$column)) else 0L
-    nrep  <- if (nrow(res$summary)) sum(res$summary$n_replaced, na.rm = TRUE) else 0L
-    showNotification(sprintf("PRM applied: %d columns checked, %d values set to NA.", ncols, nrep),
-                     type="message", duration=4)
-
-    showModal(modalDialog(
-      title = "PRM summary",
-      tagList(
-        tags$p("Expected units and PRM bounds are shown per column. Out-of-range values were set to NA."),
-        tableOutput("prm_summary_tbl")
-      ),
-      size = "l", easyClose = TRUE
-    ))
-  })
-
-
   #PRM help table
   output$help_prm_table <- renderTable({
     rules <- get_rules()
@@ -1040,34 +813,8 @@ server <- function(input, output, session) {
         Example = "library(fluxtools); get_prm_rules()"
       ))
     }
-
-    # If PRM applied, show per-column summary; else the static rule table
-    if (!is.null(rv$prm_summary)) {
-      s <- rv$prm_summary
-      s$pct_replaced <- round(s$pct_replaced, 1)
-      want <- c("column","family","units","min","max","n_replaced","pct_replaced")
-      s[, intersect(want, names(s)), drop = FALSE]
-    } else {
-      want <- c("variable","description","units","min","max")
-      rules[, intersect(want, names(rules)), drop = FALSE]
-    }
+    rules[, c("variable","description","units","min","max")]
   })
-
-  output$prm_summary_tbl <- renderTable({
-    s <- rv$prm_summary; req(s)
-    rules <- get_rules()
-    if (!is.null(rules) && all(c("variable","units") %in% names(rules))) {
-      u_map <- setNames(rules$units, rules$variable)
-      s$units <- unname(u_map[s$family])
-    } else {
-      s$units <- NA_character_
-    }
-    s$pct_replaced <- round(s$pct_replaced, 1)
-    want <- c("column","family","units","min","max","n_replaced","pct_replaced")
-    s[, intersect(want, names(s)), drop = FALSE]
-  })
-
-
 
   #prm reactive values
   rv$prm_active     <- FALSE
@@ -1097,29 +844,6 @@ server <- function(input, output, session) {
     removeClass <- if (isTRUE(input$dark_mode)) "" else "dark-mode"
     session$sendCustomMessage("toggleBodyClass", list(add=addClass, remove=removeClass))
   })
-
-
-  #overlay
-  observe({
-    req(rv$df)
-    num_cols <- rv$df %>%
-      dplyr::select(-TIMESTAMP_START, -raw_ts, -ts_str, -.row) %>%
-      dplyr::select(where(is.numeric)) %>%
-      names()
-
-    old <- isolate(input$overlay_vars) %||% character()
-    keep <- intersect(old, num_cols)
-
-    freezeReactiveValue(input, "overlay_vars")
-    updateSelectizeInput(
-      session, "overlay_vars",
-      choices  = num_cols,
-      selected = keep,
-      server   = TRUE
-    )
-  })
-
-
 
 #Tooltip thats automatic and obvious (doesnt need mouse hover)
   # observe({
@@ -1162,13 +886,6 @@ server <- function(input, output, session) {
   })
 
     #Prm
-  # server()
-  observe({
-    fam <- input$prm_families
-    lab <- if (length(fam)) sprintf("Apply PRM (%d selected)", length(fam)) else "Apply PRM (all)"
-  updateActionButton(session, "apply_prm_btn", label = lab)
-  })
-
     # PRM family choices present in the data
     # PRM variable choices present in the uploaded data
   # Put this somewhere in server() AFTER rv$df exists:
@@ -1247,20 +964,9 @@ server <- function(input, output, session) {
   observeEvent(input$clear_sel, {
     # 1) clear the lasso brush
     session$resetBrush("qc_plot")
-    # 2) clear the orange preview
+    # 2) clear the “current” keys
     sel_keys(integer(0))
-
-    # 3) clear staged flags for the variables we’re editing (overlay aware)
-    vars <- vars_to_edit()
-    vars <- intersect(vars, names(rv$df) %||% character())
-    if (length(vars)) {
-      for (v in vars) removed_ts[[v]] <- NULL
-      showNotification(sprintf("Cleared staged flags for %d variable%s.",
-                               length(vars), if (length(vars)==1) "" else "s"),
-                       type="message", duration=2)
-    }
   })
-
 
   # Show PRM summary table in a modal
   output$prm_summary_tbl <- renderTable({
@@ -1279,15 +985,12 @@ server <- function(input, output, session) {
 
   observeEvent(input$apply_prm_btn, {
     req(rv$df)
-
-
     if (isTRUE(rv$prm_active)) {
       showNotification("PRM already applied. Use “Undo PRM” to revert", type="message")
       return()
     }
     before <- rv$df
     fam    <- input$prm_families
-    rv$prm_include <- if (length(fam)) fam else NULL
 
     res <- try(apply_prm_safe(before, include = if (length(fam)) fam else NULL), silent = TRUE)
     if (inherits(res, "try-error")) {
@@ -1324,11 +1027,11 @@ server <- function(input, output, session) {
       title = "PRM summary",
       tagList(
         tags$p("Expected units and PRM bounds are shown per column. Out-of-range values were set to NA."),
-        div(class = "table-wrap", tableOutput("prm_summary_tbl"))
+        tableOutput("prm_summary_tbl")
       ),
-      size = "l", easyClose = TRUE
+      size = "l",
+      easyClose = TRUE
     ))
-
   })
 
   observeEvent(input$undo_prm_btn, {
@@ -1349,8 +1052,6 @@ server <- function(input, output, session) {
     rv$prm_mask <- NULL
     rv$prm_summary <- NULL
     rv$prm_active <- FALSE
-    rv$prm_include <- NULL
-
     showNotification("Undid PRM-only changes.", type = "message", duration = 3)
   })
 
@@ -1422,21 +1123,6 @@ server <- function(input, output, session) {
       r0    <- range(ts_all)
       r0[1] <- align_to_step(r0[1], step0)
       r0[2] <- ceil_to_step(r0[2],  step0)
-      # after you compute r (or r0) in UTC:
-      range_utc  <- if (exists("r0")) r0 else r
-      range_view <- to_view_time(range_utc)
-
-      updateAirDateInput(
-        session, "time_rng_dt",
-        value = range_view  # a length-2 POSIXct for start/end in the display offset
-      )
-
-      #update
-      # after computing r0 (aligned UTC range) and step0
-      updateAirDateInput(session, "start_dt", value = to_view_time(r0[1]))
-      updateAirDateInput(session, "end_dt",   value = to_view_time(r0[2]))
-
-      ##
       updateSliderInput(
         session, "time_rng",
         min = r0[1], max = r0[2], value = r0,
@@ -1450,48 +1136,21 @@ server <- function(input, output, session) {
 
 
 
-
-
   })
-
-
-
 
   observeEvent(input$rng_flag, {
-    df <- df_by_year(); req(df)
-
-    # variables we’re editing right now
-    vars <- vars_to_edit()
-    vars <- intersect(vars, names(df))               # guard
-    if (!length(vars)) return()
-
-    # build a row mask (for the orange preview) over all vars
-    all_rows <- integer(0)
-
-    for (v in vars) {
-      # compute per-variable range outside test
-      idx_v <- which(
-        (!is.na(input$rng_min) & df[[v]] < input$rng_min) |
-          (!is.na(input$rng_max) & df[[v]] > input$rng_max)
-      )
-      if (!length(idx_v)) next
-
-      all_rows <- c(all_rows, df$.row[idx_v])
-
-      ts_v <- df$ts_str[idx_v]
-      old  <- removed_ts[[v]] %||% character()
-      removed_ts[[v]] <- unique(c(old, ts_v))
-    }
-
-    if (!length(all_rows)) {
-      showNotification("No points outside that range for selected variable(s).", type="message")
-      return()
-    }
-
-    sel_keys(unique(c(isolate(sel_keys()), unique(all_rows))))
-    showNotification("Range flags applied per overlaid variable.", type="message", duration=2)
+    req(input$rng_var)
+    df <- df_by_year()
+    v  <- input$rng_var
+    idx <- which( (!is.na(input$rng_min) & df[[v]] < input$rng_min) |
+                    (!is.na(input$rng_max) & df[[v]] > input$rng_max) )
+    if (!length(idx)) { showNotification("No points outside that range.", type="message"); return() }
+    rows <- df$.row[idx]
+    sel_keys(unique(c(isolate(sel_keys()), rows)))
+    ts <- df$ts_str[idx]
+    old <- removed_ts[[v]] %||% character()
+    removed_ts[[v]] <- unique(c(old, ts))
   })
-
 
   observeEvent(input$rng_clear, {
     v <- input$rng_var; req(v)
@@ -1554,9 +1213,9 @@ server <- function(input, output, session) {
             tags$ul(
               tags$h4("1. Upload & Choose Variables"),
               tags$ul(
-                tags$li(tags$b("Upload")," your AmeriFlux CSV (≤ 1 GB; multi-year enabled)"),
+                tags$li(tags$b("Upload")," your AmeriFlux CSV (≤ 100 MB; multi-year enabled)"),
                 tags$li(tags$b("X-axis:"),"Defaults to TIMESTAMP_START (e.g., 'YYYYMMDDHHMM', such as '201507281700'); you can switch to any numeric variable"),
-                tags$li(tags$b("Time Note:")," TIMESTAMP_START is parsed into POSIXct in user-selected UCT offset so you see familiar clock times (e.g. 14:00), but the generated code always uses the original 'YYYYMMDDHHMM' string to avoid ambiguity"),
+                tags$li(tags$b("Time Note:")," TIMESTAMP_START is parsed into POSIXct in your local TZ so you see familiar clock times (e.g. 14:00), but the generated code always uses the original 'YYYYMMDDHHMM' string to avoid ambiguity"),
                 tags$li(tags$b("Y-axis:")," The variable you want to remove (i.e. FC_1_1_1)"),
                 tags$li(tags$b("Year filter")," select one or more years to scope your QA/QC (defaults to all)"),
                 tags$li(tags$b("Theme")," toggle light/dark mode via the switch at the bottom left")
@@ -1613,8 +1272,7 @@ server <- function(input, output, session) {
               tags$li(tags$b("Variables:"), " optionally limit PRM to specific variable groups (e.g., SWC, P, TA, CO2)")
             ),
             tags$h5("PRM bounds"),
-            div(class = "table-wrap", tableOutput("help_prm_table"))
-
+            tableOutput("help_prm_table")
           )
         ),
 
@@ -1669,263 +1327,258 @@ server <- function(input, output, session) {
     removed_ts[[input$yvar]] <- setdiff(existing, ts_out)
   })
 
+  observeEvent(input$add_sel, {
+    keys <- selected_keys()
+    if (!length(keys)) return()
 
-
+    sel_keys(unique(c(isolate(sel_keys()), keys)))
+    ts    <- df_by_year() %>% filter(.row %in% keys) %>% pull(ts_str)
+    old   <- removed_ts[[input$yvar]] %||% character()
+    removed_ts[[input$yvar]] <- unique(c(old, ts))
+  })
 
 
 
   # ────────────────────────────────────────────────────────────────────────────
   # Render the Plotly scatter (with event_register)
   # ────────────────────────────────────────────────────────────────────────────
-output$qc_plot <- renderPlotly({
-  df0 <- df_by_year()
-  req(df0, input$xvar, input$yvar)
+  output$qc_plot <- renderPlotly({
+    df0 <- df_by_year()
+    req(df0, input$xvar, input$yvar)
 
-  overlay_on <- isTRUE(input$overlay_mode) && length(input$overlay_vars)
 
-  # ── Overlay mode ────────────────────────────────────────────────────────────
-  if (overlay_on) {
-    df <- df0
+    dfc <- df0 %>%
+      filter(
+        !is.na(.data[[input$xvar]]),
+        !is.na(.data[[input$yvar]])
+      ) %>%
+      {
+        fit0 <- lm(reformulate(input$xvar, input$yvar), data = .)
+        mutate(
+          .,
+          fitted = predict(fit0, newdata = .),
+          resid  = .data[[input$yvar]] - fitted,
+          sigma  = sd(resid, na.rm = TRUE),
+          flag   = if_else(
+            abs(resid) > input$sd_thresh * sigma,
+            "outlier", "inlier"
+          )
+        )
+      }
+
+
+    marker_blue <- if (isTRUE(input$dark_mode)) "#1F62FF" else "#1F449C"
+
+    # use absolute UTC for data; make a view-only shifted time for plotting/labels
     if (identical(input$xvar, "TIMESTAMP_START")) {
-      df$ts_view <- df$TIMESTAMP_START + data_off_hr()*3600
+      dfc$ts_view <- dfc$TIMESTAMP_START + data_off_hr()*3600
     }
 
-    vars_plot <- unique(c(if (isTRUE(input$overlay_include_y)) input$yvar, input$overlay_vars))
 
-    p <- plotly::plot_ly(source = "qc_plot") %>%
-      plotly::event_register("plotly_selected")
-
-    # main traces
-    for (v in vars_plot) {
-      dd <- df %>%
-        dplyr::filter(!is.na(.data[[v]]), !is.na(.data[[input$xvar]]))
-      if (NROW(dd) == 0) next
-      xvec <- if (identical(input$xvar, "TIMESTAMP_START")) dd$ts_view else dd[[input$xvar]]
-      p <- p %>% plotly::add_markers(
-        data = dd,
-        x = xvec, y = dd[[v]],
-        key = paste(dd$ts_str, v, sep = "||"),   # key encodes ts + var
-        name = v,
-        marker = list(opacity = 0.8),
-        inherit = FALSE
+    p <- plot_ly(
+      data   = dfc,
+      x      = if (identical(input$xvar, "TIMESTAMP_START")) ~ts_view else ~.data[[input$xvar]],
+      y      = ~.data[[input$yvar]],
+      key    = ~.row,
+      source = "qc_plot",
+      mode   = "markers",
+      type   = "scatter",
+      marker = list(color = marker_blue, opacity = 0.8)
+    ) %>%
+      event_register("plotly_selected")%>%
+      layout(
+        plot_bgcolor  = "rgba(0,0,0,0)",  # transparent inside plotting area
+        paper_bgcolor = "rgba(0,0,0,0)"   # transparent outside plotting area
       )
-    }
 
-    # flagged (orange) per variable
-    for (v in vars_plot) {
-      ts_v <- removed_ts[[v]] %||% character()
-      if (!length(ts_v)) next
-      dd_flag <- df %>%
-        dplyr::filter(ts_str %in% ts_v,
-                      !is.na(.data[[v]]),
-                      !is.na(.data[[input$xvar]]))
-      if (NROW(dd_flag) == 0) next
-      xvecf <- if (identical(input$xvar, "TIMESTAMP_START")) dd_flag$ts_view else dd_flag[[input$xvar]]
-      p <- p %>% plotly::add_markers(
-        data = dd_flag,
-        x = xvecf, y = dd_flag[[v]],
-        key = paste(dd_flag$ts_str, v, sep = "||"),
-        name = paste0(v, " (flagged)"),
-        marker = list(size = 10, color = "#FFC107", line = list(width = 1)),
+
+
+
+
+    # Plot the ±σ outliers as red
+  # outliers layer
+  if (input$sd_thresh > 0) {
+    p <- p %>%
+      add_trace(
+        data = dplyr::filter(dfc, flag == "outlier"),
+        x    = if (identical(input$xvar, "TIMESTAMP_START")) ~ts_view else ~.data[[input$xvar]],
+        y    = ~.data[[input$yvar]],
+        mode = "markers",
+        type = "scatter",
+        marker = list(color = "#F05039", opacity = 0.8),
+        showlegend = FALSE
+      )
+  }
+
+  # accumulated layer
+  if (length(sel_keys()) > 0) {
+    p <- p %>%
+      add_trace(
+        data = dfc %>% dplyr::filter(.row %in% sel_keys()),
+        x    = if (identical(input$xvar, "TIMESTAMP_START")) ~ts_view else ~.data[[input$xvar]],
+        y    = ~.data[[input$yvar]],
+        mode = "markers",
+        type = "scatter",
+        marker = list(color = "#FFC107"),
         inherit = FALSE,
         showlegend = FALSE
       )
-    }
+  }
 
-    p <- p %>% plotly::layout(
-      autosize = TRUE, dragmode = "select", font = list(size = 18),
-      margin = list(l = 80, r = 20, b = 80, t = 20),
-      xaxis = if (identical(input$xvar, "TIMESTAMP_START")) {
-        list(type = "date", tickformat = "%b %d\n%H:%M",
-             title = sprintf("TIMESTAMP_START (UTC%+d)", data_off_hr()))
-      } else list(title = input$xvar),
-      yaxis = list(title = "Overlayed variables")
-    )
+
+
+    #plotly theme dark vs light mode
     if (isTRUE(input$dark_mode)) {
-      p <- p %>% plotly::layout(
-        template = "plotly_dark",
+      p <- p %>% layout(
+        template    = "plotly_dark",
         paper_bgcolor = "#2E2E2E",
         plot_bgcolor  = "#2E2E2E",
-        font = list(color = "white")
+        font = list(color = "white")#,
+        # annotationdefaults = list(
+        #   font = list(color = "black")                   # overrides all annotation text
+        # )
       )
     }
-    return(p)
-  }
 
-  # ── Single-variable mode (your original logic, unchanged) ───────────────────
-  df_filtered <- df0 %>%
-    dplyr::filter(!is.na(.data[[input$xvar]]), !is.na(.data[[input$yvar]]))
-
-  if (nrow(df_filtered) >= 2) {
-    fit0 <- lm(reformulate(input$xvar, input$yvar), data = df_filtered)
-    dfc <- df_filtered %>%
-      mutate(
-        fitted = predict(fit0, newdata = .),
-        resid  = .data[[input$yvar]] - fitted,
-        sigma  = sd(resid, na.rm = TRUE),
-        flag   = if_else(abs(resid) > input$sd_thresh * sigma, "outlier", "inlier")
-      )
-  } else {
-    # Not enough data to fit a model → plot raw points without outlier logic
-    dfc <- df_filtered %>%
-      mutate(fitted = NA_real_, resid = NA_real_, sigma = NA_real_, flag = NA_character_)
-  }
-
-  #
-  # dfc <- df0 %>%
-  #   dplyr::filter(!is.na(.data[[input$xvar]]), !is.na(.data[[input$yvar]])) %>%
-  #   {
-  #     fit0 <- lm(reformulate(input$xvar, input$yvar), data = .)
-  #     dplyr::mutate(
-  #       .,
-  #       fitted = predict(fit0, newdata = .),
-  #       resid  = .data[[input$yvar]] - fitted,
-  #       sigma  = sd(resid, na.rm = TRUE),
-  #       flag   = dplyr::if_else(abs(resid) > input$sd_thresh * sigma, "outlier", "inlier")
-  #     )
-  #   }
-
-  marker_blue <- if (isTRUE(input$dark_mode)) "#1F62FF" else "#1F449C"
-  if (identical(input$xvar, "TIMESTAMP_START")) {
-    dfc$ts_view <- dfc$TIMESTAMP_START + data_off_hr()*3600
-  }
-
-  p <- plotly::plot_ly(
-    data   = dfc,
-    x      = if (identical(input$xvar, "TIMESTAMP_START")) ~ts_view else ~.data[[input$xvar]],
-    y      = ~.data[[input$yvar]],
-    key    = ~ts_str,
-    source = "qc_plot",
-    mode   = "markers",
-    type   = "scatter",
-    marker = list(color = marker_blue, opacity = 0.8)
-  ) %>% plotly::event_register("plotly_selected")
-
-  if (input$sd_thresh > 0) {
-    p <- p %>% plotly::add_trace(
-      data = dplyr::filter(dfc, flag == "outlier"),
-      x    = if (identical(input$xvar, "TIMESTAMP_START")) ~ts_view else ~.data[[input$xvar]],
-      y    = ~.data[[input$yvar]],
-      mode = "markers",
-      type = "scatter",
-      marker = list(color = "#F05039", opacity = 0.8),
-      showlegend = FALSE
-    )
-  }
-
-  if (length(sel_keys()) > 0) {
-    p <- p %>% plotly::add_trace(
-      data = dplyr::filter(dfc, .row %in% sel_keys()),
-      x    = if (identical(input$xvar, "TIMESTAMP_START")) ~ts_view else ~.data[[input$xvar]],
-      y    = ~.data[[input$yvar]],
-      mode = "markers",
-      type = "scatter",
-      marker = list(color = "#FFC107"),
-      inherit = FALSE,
-      showlegend = FALSE
-    )
-  }
-
-  if (isTRUE(input$dark_mode)) {
-    p <- p %>% plotly::layout(
-      template = "plotly_dark",
-      paper_bgcolor = "#2E2E2E",
-      plot_bgcolor  = "#2E2E2E",
-      font = list(color = "white")
-    )
-  }
-
-  if (input$show_reg && input$xvar != "TIMESTAMP_START") {
-    # R² (all points)
-    df_all <- df0 %>% dplyr::filter(!is.na(.data[[input$xvar]]), !is.na(.data[[input$yvar]]))
-    if (nrow(df_all) >= 2) {
-      fit_all <- lm(reformulate(input$xvar, input$yvar), data = df_all)
-      r2_all  <- round(summary(fit_all)$r.squared, 2)
-      xseq_all <- seq(min(df_all[[input$xvar]], na.rm = TRUE),
-                      max(df_all[[input$xvar]], na.rm = TRUE), length.out = 100)
-      preds_all <- predict(fit_all, newdata = setNames(data.frame(xseq_all), input$xvar))
-      r2_bg_all <- if (isTRUE(input$dark_mode)) "#F52100" else "#FFBAAF"
-      r2_bg_sel <- if (isTRUE(input$dark_mode)) "#B87700" else "#FFC65C"
-
-      p <- p %>%
-        plotly::add_lines(x = xseq_all, y = preds_all, inherit = FALSE,
-                          line = list(color = "black", width = 8), showlegend = FALSE) %>%
-        plotly::add_lines(x = xseq_all, y = preds_all, inherit = FALSE,
-                          line = list(color = r2_bg_all, width = 6), showlegend = FALSE) %>%
-        plotly::add_annotations(
-          xref="paper", yref="paper", x=0.02, y=1.00, xanchor="left", yanchor="bottom",
-          text=paste0("<b>R² (all points) = ", r2_all, "</b>"),
-          showarrow=FALSE, font=list(size=18), borderpad=6, borderwidth=1.5, yshift=-18,
-          bgcolor=r2_bg_all,
-          bordercolor = if (isTRUE(input$dark_mode)) "#EEE" else "black"
+    # R2 value for ALL points,
+    # then fit a second time on (all points minus accumulated selections).
+    if (input$show_reg && input$xvar != "TIMESTAMP_START") {
+      # 1) R² on ALL points (even the ±σ outliers)
+      df_all <- df0 %>%
+        filter(
+          !is.na(.data[[input$xvar]]),
+          !is.na(.data[[input$yvar]])
         )
 
-      # R² with “accumulated” dropped
+      if (nrow(df_all) >= 2) {
+        fit_all <- lm(reformulate(input$xvar, input$yvar), data = df_all)
+        r2_all  <- round(summary(fit_all)$r.squared, 2)
+
+        # Add a gray regression line for all points:
+        xseq_all <- seq(
+          min(df_all[[input$xvar]], na.rm = TRUE),
+          max(df_all[[input$xvar]], na.rm = TRUE),
+          length.out = 100
+        )
+        preds_all <- predict(fit_all, newdata = setNames(data.frame(xseq_all), input$xvar))
+
+        r2_bg_all <- if (isTRUE(input$dark_mode)) "#F52100" else "#FFBAAF"
+        r2_bg_sel <- if (isTRUE(input$dark_mode)) "#B87700" else "#FFC65C"
+
+        p <- p %>%
+          # 1) black line, slightly thicker
+          add_lines(
+            x     = xseq_all,
+            y     = preds_all,
+            inherit=FALSE,
+            line  = list(
+              color = "black",
+              width = 8     # a little wider than your pink
+            ),
+            showlegend = FALSE
+          ) %>%
+          # 2) your pink line on top
+          add_lines(
+            x     = xseq_all,
+            y     = preds_all,
+            inherit=FALSE,
+            line  = list(
+              color = r2_bg_all,
+              width = 6
+            ),
+            showlegend = FALSE
+          )%>%
+
+          add_annotations(
+            xref        = "paper",
+            yref        = "paper",
+            x           = 0.02,
+            y           = 1.00,
+            xanchor     = "left",
+            yanchor     = "bottom",
+            text        = paste0("<b>R² (all points) = ", r2_all, "</b>"),
+            showarrow   = FALSE,
+            font        = list(size = 18),
+            borderpad   = 6,
+            borderwidth = 1.5,
+            yshift      = -18,    # ← move it down 10px
+            bgcolor     = r2_bg_all,
+
+            bordercolor = list(color = if (isTRUE(input$dark_mode)) "#EEE" else "black")
+          )
+      }
+
+      # 2) R² with accumulated points dropped
       acc_sel <- isolate(sel_keys())
       if (length(acc_sel) > 0) {
-        df_drop_sel <- df_all %>% dplyr::filter(!(.row %in% acc_sel))
-        r2_sel <- if (nrow(df_drop_sel) >= 2)
-          round(summary(lm(reformulate(input$xvar, input$yvar), data = df_drop_sel))$r.squared, 2) else NA_real_
-        p <- p %>% plotly::add_annotations(
-          xref="paper", yref="paper", x=0.02, y=0.96, xanchor="left", yanchor="bottom",
-          text=paste0("<b>R² (sel dropped) = ", r2_sel, "</b>"),
-          showarrow=FALSE, font=list(size=18), borderpad=6, borderwidth=1.5, yshift=-26,
-          bgcolor=r2_bg_sel,
-          bordercolor = if (isTRUE(input$dark_mode)) "#EEE" else "black"
-        )
+        # Build a dataset that excludes the .row indices in acc_sel
+        df_drop_sel <- df0 %>%
+          filter(
+            !is.na(.data[[input$xvar]]),
+            !is.na(.data[[input$yvar]])
+          ) %>%
+          filter(!(.row %in% acc_sel))
+
+        if (nrow(df_drop_sel) >= 2) {
+          fit_sel <- lm(reformulate(input$xvar, input$yvar), data = df_drop_sel)
+          r2_sel  <- round(summary(fit_sel)$r.squared, 2)
+        } else {
+          r2_sel <- NA_real_
+        }
+
+        p <- p %>%
+          add_annotations(
+            xref        = "paper",
+            yref        = "paper",
+            x           = 0.02,
+            y           = 0.96,
+            xanchor     = "left",
+            yanchor     = "bottom",
+            text        = paste0("<b>R² (sel dropped) = ", r2_sel, "</b>"),
+            showarrow   = FALSE,
+            font        = list(size = 18),
+            borderpad   = 6,
+            borderwidth = 1.5,
+            yshift      = -26,    # ← move it down 10px
+            bgcolor     = r2_bg_sel,
+            bordercolor = list(color = if (isTRUE(input$dark_mode)) "#EEE" else "black")
+          )
       }
     }
-  }
 
-  p %>% plotly::layout(
-    autosize = TRUE,
-    dragmode = "select",
-    font   = list(size = 18),
-    margin = list(l = 80, r = 20, b = 80, t = 20),
-    xaxis = if (input$xvar == "TIMESTAMP_START") {
-      list(type = "date",
-           tickformat = "%b %d\n%H:%M",
-           title = sprintf("TIMESTAMP_START (UTC%+d)", data_off_hr()))
-    } else list(title = input$xvar),
-    yaxis = list(title = input$yvar)
-  )
-})
+    p %>%
+      layout(
+        autosize = TRUE,#helps with resolution
 
+        dragmode = "select",
+        # bump up all text a bit
+        font   = list(size = 18),#plot text size
+        # loosen the margins so big titles don’t get clipped
+        margin = list(l = 80, r = 20, b = 80, t = 20),
+        #end plot edits
 
-
-
+        xaxis = if (input$xvar == "TIMESTAMP_START") {
+          list(type = "date",
+               tickformat = "%b %d\n%H:%M",
+               title = sprintf("TIMESTAMP_START (UTC%+d)", data_off_hr()))
+        } else list(title = input$xvar),
+        yaxis = list(title = input$yvar)
+      ) %>%
+      event_register("plotly_selected")
+  })
 
   # ────────────────────────────────────────────────────────────────────────────
   # Preview table (same as before)
   # ────────────────────────────────────────────────────────────────────────────
-  # output$preview <- renderTable({
-  #   keys <- selected_keys(); if (length(keys) == 0) keys <- sel_keys()
-  #   if (length(keys) == 0) return(NULL)
-  #
-  #   hrs <- data_off_hr()
-  #   local_label <- sprintf("Timestamp (UTC%+d)", hrs)
-  #
-  #   df_by_year() %>%
-  #     dplyr::filter(.row %in% keys) %>%
-  #     dplyr::mutate(
-  #       !!local_label := format(TIMESTAMP_START, "%Y-%m-%d %H:%M", tz = data_tz())
-  #     ) %>%
-  #     dplyr::select(all_of(local_label), !!rlang::sym(input$yvar), raw_ts) %>%
-  #     setNames(c(local_label, input$yvar, "raw_ts"))
-  # }, sanitize.text.function = identity)
-
   output$preview <- renderTable({
-    ts <- selected_ts()
-    if (!length(ts) && length(sel_keys()) > 0) {
-      ts <- df_by_year()$ts_str[df_by_year()$.row %in% sel_keys()]
-    }
-    if (!length(ts)) return(NULL)
+    keys <- selected_keys(); if (length(keys) == 0) keys <- sel_keys()
+    if (length(keys) == 0) return(NULL)
 
     hrs <- data_off_hr()
     local_label <- sprintf("Timestamp (UTC%+d)", hrs)
 
     df_by_year() %>%
-      dplyr::filter(ts_str %in% ts) %>%
+      dplyr::filter(.row %in% keys) %>%
       dplyr::mutate(
         !!local_label := format(TIMESTAMP_START, "%Y-%m-%d %H:%M", tz = data_tz())
       ) %>%
@@ -1934,61 +1587,32 @@ output$qc_plot <- renderPlotly({
   }, sanitize.text.function = identity)
 
 
+
   # ────────────────────────────────────────────────────────────────────────────
   # Current‐selection code
   # ────────────────────────────────────────────────────────────────────────────
-#   output$code_current <- renderText({
-#     keys <- selected_keys()
-#     if (length(keys) == 0) keys <- sel_keys()
-#     if (length(keys) == 0) {
-#       return("
-#
-# <!-- draw a box or lasso (or click “Flag Data”) to see its code here -->
-#
-# ")
-#     }
-#     sel_ts <- df_by_year() %>% filter(.row %in% keys) %>% pull(ts_str)
-#     conds  <- paste0("TIMESTAMP_START == '", sel_ts, "' ~ NA_real_", collapse = ",\n      ")
-#     paste0(
-#       "df <- df %>%\n",
-#       "  mutate(\n",
-#       "    ", input$yvar, " = case_when(\n",
-#       "      ", conds, ",\n",
-#       "      TRUE ~ ", input$yvar, "\n",
-#       "    )\n",
-#       "  )"
-#     )
-#   })
-
   output$code_current <- renderText({
-    staged <- reactiveValuesToList(removed_ts)
-    staged <- staged[vapply(staged, length, FUN.VALUE = integer(1)) > 0]
-    if (!length(staged)) {
-      return("\n<!-- no staged points yet (box/lasso + Flag Data) -->\n")
+    keys <- selected_keys()
+    if (length(keys) == 0) keys <- sel_keys()
+    if (length(keys) == 0) {
+      return("
+
+<!-- draw a box or lasso (or click “Flag Data”) to see its code here -->
+
+")
     }
-
-    snippets <- lapply(names(staged), function(var) {
-      ts_v  <- unique(staged[[var]])
-      conds <- paste0("TIMESTAMP_START == '", ts_v, "' ~ NA_real_", collapse = ",\n      ")
-      paste0(
-        "df <- df %>%\n",
-        "  mutate(\n",
-        "    ", var, " = case_when(\n",
-        "      ", conds, ",\n",
-        "      TRUE ~ ", var, "\n",
-        "    )\n",
-        "  )"
-      )
-    })
-    paste(unlist(snippets), collapse = "\n\n")
+    sel_ts <- df_by_year() %>% filter(.row %in% keys) %>% pull(ts_str)
+    conds  <- paste0("TIMESTAMP_START == '", sel_ts, "' ~ NA_real_", collapse = ",\n      ")
+    paste0(
+      "df <- df %>%\n",
+      "  mutate(\n",
+      "    ", input$yvar, " = case_when(\n",
+      "      ", conds, ",\n",
+      "      TRUE ~ ", input$yvar, "\n",
+      "    )\n",
+      "  )"
+    )
   })
-
-
-
-
-
-
-
 
   # ────────────────────────────────────────────────────────────────────────────
   # Accumulated‐selection code
@@ -2014,6 +1638,32 @@ output$qc_plot <- renderPlotly({
     })
     paste(unlist(snippets), collapse = "\n\n")
   })
+
+#   output$code_all <- renderText({
+#     #all_removals <- reactiveValuesToList(removed_ts)
+#     all_removals <- all_removals[vapply(all_removals, length, FUN.VALUE = integer(1)) > 0]
+#     if (length(all_removals) == 0) {
+#       return("
+#
+# <!-- click “Flag Data” or “Add all ±σ outliers” → see code here -->
+#
+# ")
+#     }
+#     snippets <- lapply(names(all_removals), function(var) {
+#       ts    <- all_removals[[var]]
+#       conds <- paste0("TIMESTAMP_START == '", ts, "' ~ NA_real_", collapse = ",\n      ")
+#       paste0(
+#         "df <- df %>%\n",
+#         "  mutate(\n",
+#         "    ", var, " = case_when(\n",
+#         "      ", conds, ",\n",
+#         "      TRUE ~ ", var, "\n",
+#         "    )\n",
+#         "  )"
+#       )
+#     })
+#     paste(unlist(snippets), collapse = "\n\n")
+#   })
 
   # ────────────────────────────────────────────────────────────────────────────
   # Removed‐points code snippet (only those Confirm Removed)
@@ -2041,46 +1691,6 @@ output$qc_plot <- renderPlotly({
       "  )"
     )
   })
-
-  #overlay helper
-  selected_pairs <- reactive({
-    sel <- tryCatch({
-      d <- plotly::event_data("plotly_selected", source = "qc_plot")
-      if (is.null(d)) NULL else as.data.frame(d)
-    }, error = function(e) NULL)
-
-    if (is.null(sel) || NROW(sel) == 0) {
-      return(data.frame(ts = character(0), var = character(0)))
-    }
-
-    k <- as.character(sel$key)
-    k <- k[!is.na(k) & nzchar(k)]  # drop NA/""
-    if (length(k) == 0) {
-      return(data.frame(ts = character(0), var = character(0)))
-    }
-
-    if (all(grepl("\\|\\|", k))) {
-      parts <- strsplit(k, "\\|\\|")
-      df <- data.frame(
-        ts  = vapply(parts, `[`, character(1), 1),
-        var = vapply(parts, `[`, character(1), 2),
-        stringsAsFactors = FALSE
-      )
-    } else {
-      df <- data.frame(ts = k, var = rep(input$yvar, length(k)), stringsAsFactors = FALSE)
-    }
-
-    # sanitize
-    df <- df[!is.na(df$ts)  & nzchar(df$ts), ]
-    df <- df[!is.na(df$var) & nzchar(df$var), ]
-    if (!is.null(rv$df)) df <- df[df$var %in% names(rv$df), ]
-    rownames(df) <- NULL
-    df
-  })
-
-
-
-
 
 
   #UTC helper
@@ -2121,22 +1731,6 @@ output$qc_plot <- renderPlotly({
     name
   }
 
-  #overlay
-  observe({
-    if (!isTRUE(input$overlay_mode)) {
-      hidden <- setdiff(names(Filter(length, reactiveValuesToList(removed_ts))), input$yvar)
-      if (length(hidden)) {
-        showNotification(
-          sprintf("Overlay is OFF. %d variable%s have staged flags (ignored until overlay is ON).",
-                  length(hidden), if (length(hidden)==1) "" else "s"),
-          type="message", duration=3
-        )
-      }
-    }
-  })
-
-  ##
-
 
   # Build labeled choices once (−12…+14)
   observe({
@@ -2165,8 +1759,8 @@ output$qc_plot <- renderPlotly({
 
   # Replace your existing is_snapping/observeEvent(input$time_rng, ...) with this:
   observeEvent(time_rng_debounced(), ignoreInit = TRUE, {
-    df <- df_by_year(); req(df)
-    pool <- sort(unique(df$TIMESTAMP_START[!is.na(df$TIMESTAMP_START)]))
+    df <- df_by_year(); y <- input$yvar; req(df, y)
+    pool <- sort(unique(df$TIMESTAMP_START[!is.na(df[[y]]) & !is.na(df$TIMESTAMP_START)]))
     if (length(pool) < 2) return()
 
     tr   <- time_rng_debounced()
@@ -2174,75 +1768,7 @@ output$qc_plot <- renderPlotly({
     if (!identical(tr, tr2)) {
       updateSliderInput(session, "time_rng", value = tr2)
     }
-
-    # keep pickers in sync (display only)
-    s_view <- to_view_time(tr2[1])
-    e_view <- to_view_time(tr2[2])
-    if (is.null(input$start_dt) || abs(as.numeric(input$start_dt) - as.numeric(s_view)) > 0.5) {
-      updateAirDateInput(session, "start_dt", value = s_view)
-    }
-    if (is.null(input$end_dt) || abs(as.numeric(input$end_dt) - as.numeric(e_view)) > 0.5) {
-      updateAirDateInput(session, "end_dt", value = e_view)
-    }
   })
-
-  observeEvent(list(input$start_dt, input$end_dt), ignoreInit = TRUE, {
-    req(input$start_dt, input$end_dt)
-    df <- df_by_year(); req(df)
-
-    pool <- sort(unique(df$TIMESTAMP_START[!is.na(df$TIMESTAMP_START)]))
-    if (length(pool) < 2) return()
-
-    s <- snap_to_pool(from_view_time(input$start_dt), pool)
-    e <- snap_to_pool(from_view_time(input$end_dt),   pool)
-    if (e < s) e <- s
-
-    if (!identical(as.numeric(c(s, e)), as.numeric(input$time_rng))) {
-      updateSliderInput(session, "time_rng", value = c(s, e))
-    }
-  })
-
-
-
-  # helper once
-  snap_to_pool <- function(x, pool) pool[ which.min(abs(as.numeric(pool) - as.numeric(x))) ]
-
-  observeEvent(list(input$start_dt, input$end_dt), ignoreInit = TRUE, {
-    req(input$start_dt, input$end_dt)
-    df <- df_by_year(); y <- input$yvar; req(df, y)
-
-    pool <- sort(unique(df$TIMESTAMP_START[!is.na(df[[y]]) & !is.na(df$TIMESTAMP_START)]))
-    if (length(pool) < 2) return()
-
-    s <- snap_to_pool(from_view_time(input$start_dt), pool)
-    e <- snap_to_pool(from_view_time(input$end_dt),   pool)
-    if (e < s) e <- s
-
-    if (!identical(as.numeric(c(s, e)), as.numeric(input$time_rng))) {
-      updateSliderInput(session, "time_rng", value = c(s, e))
-    }
-  })
-
-
-  # observeEvent(input$end_dt, ignoreInit = TRUE, {
-  #   req(input$start_dt, input$end_dt)
-  #   df <- df_by_year(); y <- input$yvar; req(df, y)
-  #
-  #   pool <- sort(unique(df$TIMESTAMP_START[!is.na(df[[y]]) & !is.na(df$TIMESTAMP_START)]))
-  #   if (length(pool) < 2) return()
-  #
-  #   s_utc <- from_view_time(input$start_dt)
-  #   e_utc <- from_view_time(input$end_dt)
-  #
-  #   s <- snap_to_pool(s_utc, pool)
-  #   e <- snap_to_pool(e_utc, pool)
-  #   if (e < s) e <- s  # clamp
-  #
-  #   if (!identical(as.numeric(c(s, e)), as.numeric(input$time_rng))) {
-  #     updateSliderInput(session, "time_rng", value = c(s, e))
-  #   }
-  # })
-  #
 
 
 
@@ -2252,237 +1778,115 @@ output$qc_plot <- renderPlotly({
   # DOWNLOAD HANDLER for “Download cleaned CSV”
   # ────────────────────────────────────────────────────────────────────────────
   output$download_data <- downloadHandler(
-    filename = function() paste0("fluxtools_", Sys.Date(), ".zip"),
+    filename = function() {
+      paste0("flux_cleaned_", Sys.Date(), ".zip")
+    },
     content = function(zipfile) {
-      tmpdir <- tempfile("fluxtools_"); dir.create(tmpdir)
+      # 1) Create a brand-new temp directory
+      tmpdir <- tempfile("flux_clean_")
+      dir.create(tmpdir)
 
-      # 0) ORIGINAL input (what the scripts will read)
-      orig_path <- file.path(tmpdir, "raw_df.csv")
-      write.csv(raw_df(), orig_path, row.names = FALSE, na = "NA")
-
-      # 1) CLEANED CSV reflecting in-app removals
-      csv_name <- paste0("fluxtools_processed_df_", Sys.Date(), ".csv")
+      # 2) Write the cleaned CSV with the exact name you want
+      csv_name <- paste0("flux_cleaned_", Sys.Date(), ".csv")
       csv_path <- file.path(tmpdir, csv_name)
 
       base_df <- raw_df()
       helper  <- df_by_year()
       for (col in setdiff(names(base_df), "TIMESTAMP_START")) {
-        if (col %in% names(helper)) base_df[[col]] <- helper[[col]]
+        if (col %in% names(helper)) {
+          base_df[[col]] <- helper[[col]]
+        }
       }
       write.csv(base_df, csv_path, row.names = FALSE, na = "NA")
 
-      # 2) Main manual-removal script
-      script_name <- "fluxtools_removal_script.R"
+      # 3) Write the removal script under the exact name you want
+      script_name <- "flux_remove_script.R"
       script_path <- file.path(tmpdir, script_name)
 
       cfs <- reactiveValuesToList(confirmed_ts)
-      cfs <- cfs[vapply(cfs, length, FUN.VALUE = integer(1)) > 0]
-
-      extra_files <- c(orig_path, csv_path, script_path)
-
-      # 3) Include PRM summary if present
-      if (isTRUE(rv$prm_active) && !is.null(rv$prm_summary)) {
-        prm_csv <- file.path(tmpdir, "prm_summary.csv")
-        write.csv(rv$prm_summary, prm_csv, row.names = FALSE, na = "NA")
-        extra_files <- c(extra_files, prm_csv)
-      }
-
-      # 4) Write the main script (fix: read raw_df.csv)
+      cfs <- cfs[vapply(cfs, length, FUN.VALUE=0L) > 0]
       lines <- c(
-        "## Auto-generated QA/QC script",
-        "suppressPackageStartupMessages({",
-        "  library(dplyr)",
-        "})",
-        "na_vals <- c('NA','NaN','','-9999','-9999.0','-9999.00','-9999.000')",
-        "df <- read.csv('raw_df.csv', stringsAsFactors = FALSE, na.strings = na_vals)",
+        "## Auto-generated removal script",
+        "library(dplyr)",
+        "df <- read.csv('flux_original.csv', stringsAsFactors=FALSE)",
         ""
       )
-
-
-      if (isTRUE(rv$prm_active)) {
-        include_vec <- rv$prm_include
-        include_txt <- if (is.null(include_vec)) "NULL" else
-          paste0("c(", paste(sprintf("'%s'", include_vec), collapse = ", "), ")")
-
-        lines <- c(
-          lines,
-          "## --- Physical Range Module (PRM) -------------------------------------",
-          "if (requireNamespace('fluxtools', quietly = TRUE)) {",
-          sprintf("  res <- try(fluxtools::apply_prm(df, include = %s, note = TRUE, summarize = TRUE), silent = TRUE)",
-                  include_txt),
-          "  if (!inherits(res, 'try-error') && is.list(res) && !is.null(res$data)) {",
-          "    df <- res$data",
-          "    if (!is.null(res$summary) && is.data.frame(res$summary)) {",
-          "      try(utils::write.csv(res$summary, 'prm_summary.csv', row.names = FALSE), silent = TRUE)",
-          "    }",
-          "  }",
-          "} else { message('fluxtools not installed; PRM step skipped.') }",
-          ""
+      for (var in names(cfs)) {
+        tses  <- cfs[[var]]
+        conds <- paste0("TIMESTAMP_START == '", tses, "' ~ NA_real_", collapse=",\n  ")
+        lines <- c(lines,
+                   sprintf("## remove for %s", var),
+                   "df <- df %>%",
+                   sprintf("  mutate(%s = case_when(\n  %s,\n  TRUE ~ %s\n))", var, conds, var),
+                   ""
         )
-
       }
-
-      if (length(cfs)) {
-        for (var in names(cfs)) {
-          tses  <- cfs[[var]]
-          conds <- paste0("TIMESTAMP_START == '", tses, "' ~ NA_real_", collapse = ",\n    ")
-
-          lines <- c(
-            lines,
-            sprintf("## --- Manually Selected (%d) Turned NA -------------------------------------", length(tses)),
-            sprintf("## Variable: %s", var),
-            "df <- df %>%",
-            sprintf("  mutate(%s = dplyr::case_when(\n    %s,\n    TRUE ~ %s\n  ))", var, conds, var),
-            ""
-          )
-        }
-      } else {
-        lines <- c(lines, "## (No manual removals were confirmed in the app)", "")
-      }
-
-      lines <- c(lines, "write.csv(df, 'fluxtools_processed.csv', row.names = FALSE, na = 'NA')")
+      lines <- c(lines,
+                 "write.csv(df, 'flux_cleaned.csv', row.names=FALSE, na='NA')"
+      )
       writeLines(lines, script_path)
 
-      # 5) PRM audit → wide + long + manual replay script
-      if (isTRUE(rv$prm_active) && !is.null(rv$prm_mask)) {
-        removed_list <- lapply(names(rv$prm_mask), function(nm) {
-          df_rows <- rv$prm_mask[[nm]]
-          if (is.null(df_rows) || nrow(df_rows) == 0) return(NULL)
-          ts_vec <- rv$df$ts_str[ match(df_rows$.row, rv$df$.row) ]
-          data.frame(
-            TIMESTAMP_START = ts_vec,
-            column          = nm,
-            original_value  = df_rows$old,
-            stringsAsFactors = FALSE
-          )
-        })
-        removed_df <- do.call(rbind, removed_list)
-
-        if (!is.null(removed_df) && nrow(removed_df) > 0) {
-          # Wide (requested): each variable becomes its own column
-          removed_wide <- tidyr::pivot_wider(
-            removed_df,
-            id_cols    = TIMESTAMP_START,
-            names_from = column,
-            values_from = original_value,
-            values_fn   = list(original_value = function(x) paste(unique(x), collapse = "; "))
-          )
-          prm_removed_csv_wide <- file.path(tmpdir, "prm_removed_values.csv")
-          write.csv(removed_wide, prm_removed_csv_wide, row.names = FALSE, na = "NA")
-
-          manual_script <- file.path(tmpdir, "manual_prm_removed.R")
-          lines_manual <- c(
-            "## Manual PRM removal (exact cells set to NA by PRM in the app)",
-            "suppressPackageStartupMessages({ library(dplyr) })",
-            "df <- read.csv('raw_df.csv', stringsAsFactors = FALSE)"
-          )
-          by_col <- split(removed_df, removed_df$column)
-          for (nm in names(by_col)) {
-            tses <- unique(by_col[[nm]]$TIMESTAMP_START)
-            if (!length(tses)) next
-            conds <- paste0("TIMESTAMP_START == '", tses, "' ~ NA_real_", collapse = ",\n    ")
-            lines_manual <- c(
-              lines_manual,
-              sprintf("## PRM-removed cells for %s", nm),
-              "df <- df %>%",
-              sprintf("  mutate(%s = dplyr::case_when(\n    %s,\n    TRUE ~ %s\n  ))", nm, conds, nm),
-              ""
-            )
-          }
-          lines_manual <- c(lines_manual,
-                            "write.csv(df, 'prm_manual_removal.csv', row.names = FALSE, na = 'NA')")
-          writeLines(lines_manual, manual_script)
-
-          extra_files <- c(extra_files, prm_removed_csv_wide, manual_script)
-        }
-      }
-
-      # 6) Zip everything
-      utils::zip(zipfile, files = extra_files, flags = "-j", extras = "-q")
-      #utils::zip(zipfile, files = extra_files, flags = "-j")
+      # 4) Zip them up, stripping off the tempdir path so only the basenames appear
+      utils::zip(zipfile,
+                 files = c(csv_path, script_path),
+                 flags = "-j")
     }
   )
 
 
-
-
-
-
   #Unflag Data button logic
   observeEvent(input$remove_acc, {
-    pairs <- selected_pairs()
-    if (nrow(pairs) == 0) return()
+    keys <- selected_keys()
+    if (length(keys) == 0) return()
 
-    # keep orange layer tidy for current view
-    rows <- df_by_year()$.row[df_by_year()$ts_str %in% pairs$ts]
-    sel_keys(setdiff(isolate(sel_keys()), rows))
+    # 1) remove those rows from the sel_keys (orange “accumulated” points)
+    sel_keys(setdiff(isolate(sel_keys()), keys))
 
-    # per-variable unflag
-    byv <- split(pairs$ts, pairs$var)
-    for (v in names(byv)) {
-      old <- removed_ts[[v]] %||% character()
-      removed_ts[[v]] <- setdiff(old, unique(byv[[v]]))
-    }
+    # 2) remove their ts_str from removed_ts[[yvar]]
+    ts_to_drop <- df_by_year() %>% filter(.row %in% keys) %>% pull(ts_str)
+    old       <- removed_ts[[ input$yvar ]] %||% character()
+    removed_ts[[ input$yvar ]] <- setdiff(old, ts_to_drop)
   })
 
-  #overlay
-  observeEvent(input$overlay_mode, {
-    if (!isTRUE(input$overlay_mode)) {
-      # Keep Y’s staged flags, purge the rest so nothing “hidden” lingers
-      all_staged <- names(Filter(length, reactiveValuesToList(removed_ts)))
-      for (v in setdiff(all_staged, input$yvar)) removed_ts[[v]] <- NULL
-      # Also tidy the orange layer preview
-      sel_keys(integer(0)); session$resetBrush("qc_plot")
-      showNotification("Overlay off: cleared staged flags for non-Y variables.", type="message", duration=2)
-    }
-  }, ignoreInit = TRUE)
 
+
+
+
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Confirm Remove → set selected rows’ y‐value to NA, record them in confirmed_ts
+  # ────────────────────────────────────────────────────────────────────────────
   observeEvent(input$remove, {
-    pairs  <- selected_pairs()                         # ts + var from plotly keys
-    staged <- reactiveValuesToList(removed_ts)         # per-var staged flags
+    # 1) Which keys in the *current* view?
+    sel    <- isolate(selected_keys())
+    acc    <- isolate(sel_keys())
+    out    <- isolate(outlier_keys())
+    local  <- unique(c(sel, acc, out))
+    if (length(local)==0) return()
 
-    # variables we’re allowed to touch right now:
-    allowed <- intersect(vars_to_edit(), names(rv$df) %||% character())
+    # 2) Pull their .row from the filtered data.frame
+    global_rows <- df_by_year()[ local, ]$.row
 
-    # staged vars in-scope
-    staged_vars <- intersect(names(Filter(function(z) length(z) > 0, staged)), allowed)
-    # brushed vars in-scope
-    brushed_vars <- if (NROW(pairs) > 0) intersect(unique(pairs$var), allowed) else character(0)
-
-    vars_all <- unique(c(staged_vars, brushed_vars))
-    if (length(vars_all) == 0) {
-      showNotification("Nothing to remove for current selection.", type = "message")
-      return()
-    }
-
+    # 3) Mutate the master copy
     tmp <- rv$df
-    total_tses <- 0L
+    tmp[[ input$yvar ]][ global_rows ] <- NA_real_
+    rv$df <- tmp    # this re-triggers df_by_year() everywhere
 
-    for (v in vars_all) {
-      ts_v <- unique(c(staged[[v]] %||% character(), pairs$ts[pairs$var == v]))
-      if (length(ts_v) == 0 || !is.numeric(tmp[[v]])) next
+    # 4) Record for your R-script later
+    ts_removed <- df_by_year()[ local, ]$ts_str
+    old        <- confirmed_ts[[ input$yvar ]] %||% character()
+    confirmed_ts[[ input$yvar ]] <- unique(c(old, ts_removed))
 
-      idx <- tmp$ts_str %in% ts_v
-      tmp[[v]][idx] <- NA_real_
+    # 5) Drop them out of the “accumulated” list & clear everything
+    removed_ts[[input$yvar]] <- setdiff(
+      removed_ts[[input$yvar]] %||% character(),
+      ts_removed
 
-      confirmed_ts[[v]] <- unique(c(confirmed_ts[[v]] %||% character(), ts_v))
-      removed_ts[[v]]   <- setdiff(removed_ts[[v]] %||% character(), ts_v)
-
-      total_tses <- total_tses + length(ts_v)
-    }
-
-    rv$df <- tmp
-
-    showNotification(
-      sprintf("Applied removals: %d timestamp%s across %d variable%s.",
-              total_tses, if (total_tses == 1) "" else "s",
-              length(vars_all), if (length(vars_all) == 1) "" else "s"),
-      type = "message", duration = 3
     )
-
-    sel_keys(integer(0)); outlier_keys(integer(0)); session$resetBrush("qc_plot")
+    sel_keys(integer(0))
+    outlier_keys(integer(0))
+    session$resetBrush("qc_plot")
   })
-
 
 
   # ────────────────────────────────────────────────────────────────────────────

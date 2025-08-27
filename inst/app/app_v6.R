@@ -306,13 +306,22 @@ document.addEventListener('keydown', function(e){
                 options = list(placeholder = "Choose ≥1 variables",
                                plugins = list("remove_button")),
                 width = "100%"
-              )
+              ),
+              #theme colors
+              selectInput(
+                "overlay_palette", "Overlay colors",
+                choices = c("Set2 (pastel)" = "set2",
+                            "Tableau 10"    = "tableau10",
+                            "Okabe–Ito"     = "okabe",
+                            "Viridis"       = "viridis"),
+                selected = "Tableau 10", width = "100%"
+              ),
+              #theme colors end
           )
       ),
       checkboxInput("overlay_include_y", "Include current Y variable", TRUE)
-    )
+    ),
 
-      ,
 
 
 
@@ -376,6 +385,8 @@ document.addEventListener('keydown', function(e){
           value = "range",
           checkboxInput("rng_link_y", "Link selected variable to plot Y-axis", TRUE),
           selectInput("rng_var", "Variable", choices = NULL),
+          div(class = "mt-1", uiOutput("rng_scope_ui")),
+
           fluidRow(
             column(6, numericInput("rng_min", "Min (optional)", value = NA)),
             column(6, numericInput("rng_max", "Max (optional)", value = NA))
@@ -454,7 +465,10 @@ document.addEventListener('keydown', function(e){
                 'data-bs-toggle' = "tooltip",
                 title = "Remove ± n standard deviations (σ) from the regression line from your the accumulated code"
               )
-            )
+
+            ),
+            tags$small(class = "text-muted",
+                       "Note: outlier detection uses the current Y variable only; overlay is ignored"),
           )
         ),
 
@@ -640,6 +654,20 @@ server <- function(input, output, session) {
   #NA strings for r script output
   NA_STRINGS <- c("NA","NaN","","-9999","-9999.0","-9999.00","-9999.000")
 
+  #A tiny scope note under the Flag by value range button
+  output$rng_scope_ui <- renderUI({
+    vars <- vars_to_edit()
+    if (length(vars) > 1) {
+      tags$small(
+        class = "text-muted",
+        sprintf("Overlay ON: will flag values outside the range for: %s.", paste(vars, collapse = ", "))
+      )
+    } else {
+      tags$small(class = "text-muted", sprintf("Scope: %s.", vars))
+    }
+  })
+
+
 
 
   #PRM
@@ -713,6 +741,16 @@ server <- function(input, output, session) {
                     error = function(e) NULL)
     if (is.null(sel)) integer(0) else sel$key
   })
+
+  #time slider helper
+  rows_for_time <- function(df) {
+    vars <- vars_to_edit()
+    base <- !is.na(df$TIMESTAMP_START)
+    if (!length(vars)) return(base)                       # no overlay → whole timeline
+    any_non_na <- Reduce(`|`, lapply(vars, function(v) !is.na(df[[v]])))
+    base & any_non_na
+  }
+
 
   #overlay helper
   # which variables should edits apply to?
@@ -868,13 +906,6 @@ server <- function(input, output, session) {
     }
   })
 
-
-
-  ##
-
-
-
-
   observeEvent(input$time_flag, {
     tr <- input$time_rng; req(tr)
     df <- df_by_year()
@@ -913,7 +944,6 @@ server <- function(input, output, session) {
     session$resetBrush("qc_plot")
   })
 
-
   # returns +3 for "UTC+3", -5 for "UTC-5"
   # --- helpers ---
   parse_utc_hours <- function(lbl) as.integer(sub("UTC([+-]?\\d+).*", "\\1", lbl))
@@ -927,7 +957,6 @@ server <- function(input, output, session) {
   #Date selection helper
   to_view_time   <- function(x) as.POSIXct(as.numeric(x) + data_off_hr()*3600, origin="1970-01-01", tz = data_tz())
   from_view_time <- function(x) as.POSIXct(as.numeric(x) - data_off_hr()*3600, origin="1970-01-01", tz = "UTC")
-
 
   # raw csv
   raw_df <- reactive({
@@ -966,10 +995,12 @@ server <- function(input, output, session) {
   })
 
   output$subtitle <- renderUI({
-    req(input$yvar)
-    col <- if (isTRUE(input$dark_mode)) "#DDD" else "#555"
+    req(rv$df)
+    vars <- vars_to_edit()
+    lab  <- paste(vars, collapse = ", ")
+    col  <- if (isTRUE(input$dark_mode)) "#DDD" else "#555"
     tags$h5(
-      paste("Filtering out:", input$yvar),
+      paste("Filtering out:", lab),
       style = sprintf("color:%s; margin-top:-10px; margin-bottom:20px;", col)
     )
   })
@@ -977,6 +1008,23 @@ server <- function(input, output, session) {
   observeEvent(input$did_copy_code, {
     showNotification("Code copied ✅", type="message", duration = 1)
   })
+
+  #color overlay
+  pal_overlay <- function(n, which = input$overlay_palette) {
+    which <- which %||% "set2"
+    okabe <- c("#000000","#E69F00","#56B4E9","#009E73",
+               "#F0E442","#0072B2","#D55E00","#CC79A7")
+    tab10 <- c("#4E79A7","#F28E2B","#E15759","#76B7B2",
+               "#59A14F","#EDC948","#B07AA1","#FF9DA7",
+               "#9C755F","#BAB0AC")
+    set2  <- c("#66C2A5","#FC8D62","#8DA0CB","#E78AC3",
+               "#A6D854","#FFD92F","#E5C494","#B3B3B3")
+    vir   <- grDevices::hcl.colors(max(n,1), "viridis")
+    base  <- switch(which, okabe = okabe, tableau10 = tab10, viridis = vir, set2 = set2)
+    if (n <= length(base)) base[seq_len(n)] else grDevices::colorRampPalette(base)(n)
+  }
+
+  #color overlay end
 
   #PRM Server
   observeEvent(input$apply_prm_subset, {
@@ -1120,34 +1168,6 @@ server <- function(input, output, session) {
   })
 
 
-
-#Tooltip thats automatic and obvious (doesnt need mouse hover)
-  # observe({
-  #   off <- data_off_hr()
-  #   tip <- sprintf(
-  #     "Viewing timestamps as UTC%+d (fixed offset; no DST)<br>
-  #    Viewer-only: this setting does not change the exported file<br>
-  #    Generated code and exports match the original TIMESTAMP_START string",
-  #     off
-  #   )
-  #   session$sendCustomMessage(
-  #     "updateTooltip",
-  #     list(id = "data_offset_label", title = tip, customClass = "tt-compact")
-  #   )
-  # })
-
-  # observe({
-  #   off <- data_off_hr()
-  #   tip <- sprintf(
-  #     "Viewing timestamps as UTC%+d<br>Fixed offset; no DST<br>Viewer-only: this setting does not change the exported file<br>Generated code and exports match the original TIMESTAMP_START string",
-  #     off
-  #   )
-  #   session$sendCustomMessage(
-  #     "updateTooltip",
-  #     list(id = "data_offset_label", title = tip, customClass = "tt-compact")
-  #   )
-  # })
-
   observeEvent(input$reset_accum, {
     removed_ts[[input$yvar]] <- NULL
     sel_keys(integer(0))
@@ -1160,6 +1180,17 @@ server <- function(input, output, session) {
     which_id <- if (input$code_choice == "current") "code_current" else "code_all"
     session$sendCustomMessage("doCopy", which_id)
   })
+
+  #Dynamic label on the variable selector
+  observe({
+    lbl <- if (isTRUE(input$overlay_mode) && length(vars_to_edit()) > 1)
+      "Variable (overlay: applies to all selected)"
+    else
+      "Variable"
+    updateSelectInput(session, "rng_var", label = lbl)
+  })
+
+
 
     #Prm
   # server()
@@ -1215,8 +1246,10 @@ server <- function(input, output, session) {
 
   # replace your current observeEvent(df_by_year(), { ... }) with this:
   observe({
-    df <- df_by_year(); y <- input$yvar; req(df, y)
-    ts <- df$TIMESTAMP_START[!is.na(df[[y]]) & !is.na(df$TIMESTAMP_START)]
+    df <- df_by_year(); req(df)
+    ts <- df$TIMESTAMP_START[ rows_for_time(df) ]
+
+
     if (length(ts) >= 2) {
       step <- infer_cadence_sec(ts)       # 1800 or 3600
       r    <- range(ts)
@@ -1405,7 +1438,6 @@ server <- function(input, output, session) {
                       selected = if (!is.null(sel_y) && sel_y %in% y_choices) sel_y else y_choices[1])
 
     # Initialize/refresh the time slider from data
-    # Initialize/refresh the time slider from data
     rng  <- range(df$TIMESTAMP_START, na.rm = TRUE)
     step <- infer_cadence_sec(df$TIMESTAMP_START)
 
@@ -1416,35 +1448,24 @@ server <- function(input, output, session) {
     )
 
     # Build time slider from actual cadence (30m or 60m) again using non-NA timestamps
-    ts_all <- df$TIMESTAMP_START[!is.na(df$TIMESTAMP_START)]
+    # overlay-aware initialization
+    ts_all <- df$TIMESTAMP_START[ rows_for_time(df) ]
     if (length(ts_all) >= 2) {
       step0 <- infer_cadence_sec(ts_all)
       r0    <- range(ts_all)
       r0[1] <- align_to_step(r0[1], step0)
       r0[2] <- ceil_to_step(r0[2],  step0)
-      # after you compute r (or r0) in UTC:
-      range_utc  <- if (exists("r0")) r0 else r
-      range_view <- to_view_time(range_utc)
 
-      updateAirDateInput(
-        session, "time_rng_dt",
-        value = range_view  # a length-2 POSIXct for start/end in the display offset
-      )
-
-      #update
-      # after computing r0 (aligned UTC range) and step0
       updateAirDateInput(session, "start_dt", value = to_view_time(r0[1]))
       updateAirDateInput(session, "end_dt",   value = to_view_time(r0[2]))
-
-      ##
-      updateSliderInput(
-        session, "time_rng",
-        min = r0[1], max = r0[2], value = r0,
-        step = step0, timeFormat = "%Y-%m-%d\n%H:%M"
+      updateSliderInput(session, "time_rng",
+                        min = r0[1], max = r0[2], value = r0,
+                        step = step0, timeFormat = "%Y-%m-%d\n%H:%M"
       )
     } else {
-      updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0, 1))
+      updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0, 1), step = 3600)
     }
+
 
 
 
@@ -1678,6 +1699,13 @@ server <- function(input, output, session) {
   # Render the Plotly scatter (with event_register)
   # ────────────────────────────────────────────────────────────────────────────
 output$qc_plot <- renderPlotly({
+  overlay_on <- isTRUE(input$overlay_mode)
+
+  vars_plot <- unique(c(if (isTRUE(input$overlay_include_y)) input$yvar, input$overlay_vars))
+  if (!length(vars_plot)) vars_plot <- input$yvar  # still render overlay UI even if just Y
+
+
+
   df0 <- df_by_year()
   req(df0, input$xvar, input$yvar)
 
@@ -1696,20 +1724,23 @@ output$qc_plot <- renderPlotly({
       plotly::event_register("plotly_selected")
 
     # main traces
+    cols <- pal_overlay(length(vars_plot)); names(cols) <- vars_plot
+
     for (v in vars_plot) {
-      dd <- df %>%
-        dplyr::filter(!is.na(.data[[v]]), !is.na(.data[[input$xvar]]))
+      dd <- df %>% dplyr::filter(!is.na(.data[[v]]), !is.na(.data[[input$xvar]]))
       if (NROW(dd) == 0) next
       xvec <- if (identical(input$xvar, "TIMESTAMP_START")) dd$ts_view else dd[[input$xvar]]
+
       p <- p %>% plotly::add_markers(
         data = dd,
         x = xvec, y = dd[[v]],
-        key = paste(dd$ts_str, v, sep = "||"),   # key encodes ts + var
+        key = paste(dd$ts_str, v, sep = "||"),
         name = v,
-        marker = list(opacity = 0.8),
+        marker = list(opacity = 0.85, color = cols[[v]]),
         inherit = FALSE
       )
     }
+
 
     # flagged (orange) per variable
     for (v in vars_plot) {
@@ -2166,7 +2197,7 @@ output$qc_plot <- renderPlotly({
   # Replace your existing is_snapping/observeEvent(input$time_rng, ...) with this:
   observeEvent(time_rng_debounced(), ignoreInit = TRUE, {
     df <- df_by_year(); req(df)
-    pool <- sort(unique(df$TIMESTAMP_START[!is.na(df$TIMESTAMP_START)]))
+    pool <- sort(unique(df$TIMESTAMP_START[ rows_for_time(df) ]))
     if (length(pool) < 2) return()
 
     tr   <- time_rng_debounced()
@@ -2186,21 +2217,6 @@ output$qc_plot <- renderPlotly({
     }
   })
 
-  observeEvent(list(input$start_dt, input$end_dt), ignoreInit = TRUE, {
-    req(input$start_dt, input$end_dt)
-    df <- df_by_year(); req(df)
-
-    pool <- sort(unique(df$TIMESTAMP_START[!is.na(df$TIMESTAMP_START)]))
-    if (length(pool) < 2) return()
-
-    s <- snap_to_pool(from_view_time(input$start_dt), pool)
-    e <- snap_to_pool(from_view_time(input$end_dt),   pool)
-    if (e < s) e <- s
-
-    if (!identical(as.numeric(c(s, e)), as.numeric(input$time_rng))) {
-      updateSliderInput(session, "time_rng", value = c(s, e))
-    }
-  })
 
 
 
@@ -2223,32 +2239,7 @@ output$qc_plot <- renderPlotly({
     }
   })
 
-
-  # observeEvent(input$end_dt, ignoreInit = TRUE, {
-  #   req(input$start_dt, input$end_dt)
-  #   df <- df_by_year(); y <- input$yvar; req(df, y)
-  #
-  #   pool <- sort(unique(df$TIMESTAMP_START[!is.na(df[[y]]) & !is.na(df$TIMESTAMP_START)]))
-  #   if (length(pool) < 2) return()
-  #
-  #   s_utc <- from_view_time(input$start_dt)
-  #   e_utc <- from_view_time(input$end_dt)
-  #
-  #   s <- snap_to_pool(s_utc, pool)
-  #   e <- snap_to_pool(e_utc, pool)
-  #   if (e < s) e <- s  # clamp
-  #
-  #   if (!identical(as.numeric(c(s, e)), as.numeric(input$time_rng))) {
-  #     updateSliderInput(session, "time_rng", value = c(s, e))
-  #   }
-  # })
-  #
-
-
-
-
-
-  # ────────────────────────────────────────────────────────────────────────────
+#   ──────────────────────────────────────────────────────────────────
   # DOWNLOAD HANDLER for “Download cleaned CSV”
   # ────────────────────────────────────────────────────────────────────────────
   output$download_data <- downloadHandler(

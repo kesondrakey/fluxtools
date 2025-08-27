@@ -5,7 +5,6 @@ library(plotly)
 library(dplyr)
 library(bslib)     # for theming
 library(fluxtools)
-library(bslib)
 library(shinyWidgets) #for time selector
 
 
@@ -306,13 +305,40 @@ document.addEventListener('keydown', function(e){
                 options = list(placeholder = "Choose ≥1 variables",
                                plugins = list("remove_button")),
                 width = "100%"
+              ),
+
+              #Make this a drop down "Advanced Options"
+                            #theme colors
+              selectInput(
+                "overlay_palette", "Overlay colors",
+                choices = c("Set2 (pastel)" = "set2",
+                            "tableau10"    = "tableau10",
+                            "Okabe–Ito"     = "okabe",
+                            "Viridis"       = "viridis",
+                            "Viridis (dark)"= "viridis_dark"),
+                selected = "tableau10", width = "100%"
+              ),
+              checkboxInput("overlay_hollow", "Use hollow circles", TRUE),
+              sliderInput("overlay_size", "Point size", min = 3, max = 14, value = 6, step = 1),
+              sliderInput("overlay_alpha", "Point/line opacity", min = 0.05, max = 1, value = 0.5, step = 0.05),
+              # --- Optional performance/position tweaks for overlay ---
+              numericInput(
+                "overlay_maxpts", "Max points per series (optional)",
+                value = NA, min = 1000, step = 1000, width = "100%"
+              ),
+              sliderInput(
+                "overlay_xnudge", "Separate series horizontally (sec)",
+                min = 0, max = 1800, step = 30, value = 0, width = "100%"
+              ),
+              checkboxInput(
+                "overlay_use_gl", "Use WebGL (scattergl) for very large datasets", FALSE
               )
+
           )
       ),
       checkboxInput("overlay_include_y", "Include current Y variable", TRUE)
-    )
+    ),
 
-      ,
 
 
 
@@ -376,6 +402,8 @@ document.addEventListener('keydown', function(e){
           value = "range",
           checkboxInput("rng_link_y", "Link selected variable to plot Y-axis", TRUE),
           selectInput("rng_var", "Variable", choices = NULL),
+          div(class = "mt-1", uiOutput("rng_scope_ui")),
+
           fluidRow(
             column(6, numericInput("rng_min", "Min (optional)", value = NA)),
             column(6, numericInput("rng_max", "Max (optional)", value = NA))
@@ -454,7 +482,10 @@ document.addEventListener('keydown', function(e){
                 'data-bs-toggle' = "tooltip",
                 title = "Remove ± n standard deviations (σ) from the regression line from your the accumulated code"
               )
-            )
+
+            ),
+            tags$small(class = "text-muted",
+                       "Note: outlier detection uses the current Y variable only; overlay is ignored")
           )
         ),
 
@@ -640,6 +671,20 @@ server <- function(input, output, session) {
   #NA strings for r script output
   NA_STRINGS <- c("NA","NaN","","-9999","-9999.0","-9999.00","-9999.000")
 
+  #A tiny scope note under the Flag by value range button
+  output$rng_scope_ui <- renderUI({
+    vars <- vars_to_edit()
+    if (length(vars) > 1) {
+      tags$small(
+        class = "text-muted",
+        sprintf("Overlay ON: will flag values outside the range for: %s.", paste(vars, collapse = ", "))
+      )
+    } else {
+      tags$small(class = "text-muted", sprintf("Scope: %s.", vars))
+    }
+  })
+
+
 
 
   #PRM
@@ -713,6 +758,46 @@ server <- function(input, output, session) {
                     error = function(e) NULL)
     if (is.null(sel)) integer(0) else sel$key
   })
+
+  #color helpers
+  # rgba string from hex (base)
+  hex_to_rgba <- function(hex, alpha = 1) {
+    rgb <- grDevices::col2rgb(hex)
+    sprintf("rgba(%d,%d,%d,%.3f)", rgb[1], rgb[2], rgb[3], alpha)
+  }
+
+  # simple base subsampler
+  resample_base <- function(df, nmax) {
+    if (!NROW(df) || NROW(df) <= nmax) return(df)
+    df[sample.int(NROW(df), nmax), , drop = FALSE]
+  }
+
+  # --- color helpers ---
+  tint_hex <- function(hex, amt = 0.45) {
+    # move color toward white by amt (0..1)
+    rgb <- grDevices::col2rgb(hex)/255
+    out <- pmin(1, rgb + (1 - rgb) * amt)
+    grDevices::rgb(out[1], out[2], out[3])
+  }
+  darken_hex <- function(hex, amt = 0.25) {
+    # move color toward black by amt (0..1)
+    rgb <- grDevices::col2rgb(hex)/255
+    out <- pmax(0, rgb * (1 - amt))
+    grDevices::rgb(out[1], out[2], out[3])
+  }
+  alpha_hex <- function(hex, alpha = 0.3) grDevices::adjustcolor(hex, alpha.f = alpha)
+
+  #end color helpers
+
+  #time slider helper
+  rows_for_time <- function(df) {
+    vars <- vars_to_edit()
+    base <- !is.na(df$TIMESTAMP_START)
+    if (!length(vars)) return(base)                       # no overlay → whole timeline
+    any_non_na <- Reduce(`|`, lapply(vars, function(v) !is.na(df[[v]])))
+    base & any_non_na
+  }
+
 
   #overlay helper
   # which variables should edits apply to?
@@ -868,13 +953,6 @@ server <- function(input, output, session) {
     }
   })
 
-
-
-  ##
-
-
-
-
   observeEvent(input$time_flag, {
     tr <- input$time_rng; req(tr)
     df <- df_by_year()
@@ -913,7 +991,6 @@ server <- function(input, output, session) {
     session$resetBrush("qc_plot")
   })
 
-
   # returns +3 for "UTC+3", -5 for "UTC-5"
   # --- helpers ---
   parse_utc_hours <- function(lbl) as.integer(sub("UTC([+-]?\\d+).*", "\\1", lbl))
@@ -927,7 +1004,6 @@ server <- function(input, output, session) {
   #Date selection helper
   to_view_time   <- function(x) as.POSIXct(as.numeric(x) + data_off_hr()*3600, origin="1970-01-01", tz = data_tz())
   from_view_time <- function(x) as.POSIXct(as.numeric(x) - data_off_hr()*3600, origin="1970-01-01", tz = "UTC")
-
 
   # raw csv
   raw_df <- reactive({
@@ -966,10 +1042,12 @@ server <- function(input, output, session) {
   })
 
   output$subtitle <- renderUI({
-    req(input$yvar)
-    col <- if (isTRUE(input$dark_mode)) "#DDD" else "#555"
+    req(rv$df)
+    vars <- vars_to_edit()
+    lab  <- paste(vars, collapse = ", ")
+    col  <- if (isTRUE(input$dark_mode)) "#DDD" else "#555"
     tags$h5(
-      paste("Filtering out:", input$yvar),
+      paste("Filtering out:", lab),
       style = sprintf("color:%s; margin-top:-10px; margin-bottom:20px;", col)
     )
   })
@@ -977,6 +1055,33 @@ server <- function(input, output, session) {
   observeEvent(input$did_copy_code, {
     showNotification("Code copied ✅", type="message", duration = 1)
   })
+
+  #color overlay
+  # color overlay (no extra packages)
+  pal_overlay <- function(n, which = input$overlay_palette) {
+    which <- which %||% "set2"
+
+    okabe <- c("#000000","#E69F00","#56B4E9","#009E73",
+               "#F0E442","#0072B2","#D55E00","#CC79A7")
+    tab10 <- c("#4E79A7","#F28E2B","#E15759","#76B7B2",
+               "#59A14F","#EDC948","#B07AA1","#FF9DA7",
+               "#9C755F","#BAB0AC")
+    set2  <- c("#66C2A5","#FC8D62","#8DA0CB","#E78AC3",
+               "#A6D854","#FFD92F","#E5C494","#B3B3B3")
+
+    base <- switch(which,
+                   okabe        = okabe,
+                   tableau10    = tab10,
+                   set2         = set2,
+                   viridis      = grDevices::hcl.colors(max(n,1), "viridis"),
+                   viridis_dark = grDevices::hcl.colors(max(n,1), "viridis"),
+                   set2 # fallback
+    )
+
+    if (n <= length(base)) base[seq_len(n)] else grDevices::colorRampPalette(base)(n)
+  }
+
+  #color overlay end
 
   #PRM Server
   observeEvent(input$apply_prm_subset, {
@@ -1120,34 +1225,6 @@ server <- function(input, output, session) {
   })
 
 
-
-#Tooltip thats automatic and obvious (doesnt need mouse hover)
-  # observe({
-  #   off <- data_off_hr()
-  #   tip <- sprintf(
-  #     "Viewing timestamps as UTC%+d (fixed offset; no DST)<br>
-  #    Viewer-only: this setting does not change the exported file<br>
-  #    Generated code and exports match the original TIMESTAMP_START string",
-  #     off
-  #   )
-  #   session$sendCustomMessage(
-  #     "updateTooltip",
-  #     list(id = "data_offset_label", title = tip, customClass = "tt-compact")
-  #   )
-  # })
-
-  # observe({
-  #   off <- data_off_hr()
-  #   tip <- sprintf(
-  #     "Viewing timestamps as UTC%+d<br>Fixed offset; no DST<br>Viewer-only: this setting does not change the exported file<br>Generated code and exports match the original TIMESTAMP_START string",
-  #     off
-  #   )
-  #   session$sendCustomMessage(
-  #     "updateTooltip",
-  #     list(id = "data_offset_label", title = tip, customClass = "tt-compact")
-  #   )
-  # })
-
   observeEvent(input$reset_accum, {
     removed_ts[[input$yvar]] <- NULL
     sel_keys(integer(0))
@@ -1160,6 +1237,17 @@ server <- function(input, output, session) {
     which_id <- if (input$code_choice == "current") "code_current" else "code_all"
     session$sendCustomMessage("doCopy", which_id)
   })
+
+  #Dynamic label on the variable selector
+  observe({
+    lbl <- if (isTRUE(input$overlay_mode) && length(vars_to_edit()) > 1)
+      "Variable (overlay: applies to all selected)"
+    else
+      "Variable"
+    updateSelectInput(session, "rng_var", label = lbl)
+  })
+
+
 
     #Prm
   # server()
@@ -1215,8 +1303,10 @@ server <- function(input, output, session) {
 
   # replace your current observeEvent(df_by_year(), { ... }) with this:
   observe({
-    df <- df_by_year(); y <- input$yvar; req(df, y)
-    ts <- df$TIMESTAMP_START[!is.na(df[[y]]) & !is.na(df$TIMESTAMP_START)]
+    df <- df_by_year(); req(df)
+    ts <- df$TIMESTAMP_START[ rows_for_time(df) ]
+
+
     if (length(ts) >= 2) {
       step <- infer_cadence_sec(ts)       # 1800 or 3600
       r    <- range(ts)
@@ -1405,7 +1495,6 @@ server <- function(input, output, session) {
                       selected = if (!is.null(sel_y) && sel_y %in% y_choices) sel_y else y_choices[1])
 
     # Initialize/refresh the time slider from data
-    # Initialize/refresh the time slider from data
     rng  <- range(df$TIMESTAMP_START, na.rm = TRUE)
     step <- infer_cadence_sec(df$TIMESTAMP_START)
 
@@ -1416,35 +1505,24 @@ server <- function(input, output, session) {
     )
 
     # Build time slider from actual cadence (30m or 60m) again using non-NA timestamps
-    ts_all <- df$TIMESTAMP_START[!is.na(df$TIMESTAMP_START)]
+    # overlay-aware initialization
+    ts_all <- df$TIMESTAMP_START[ rows_for_time(df) ]
     if (length(ts_all) >= 2) {
       step0 <- infer_cadence_sec(ts_all)
       r0    <- range(ts_all)
       r0[1] <- align_to_step(r0[1], step0)
       r0[2] <- ceil_to_step(r0[2],  step0)
-      # after you compute r (or r0) in UTC:
-      range_utc  <- if (exists("r0")) r0 else r
-      range_view <- to_view_time(range_utc)
 
-      updateAirDateInput(
-        session, "time_rng_dt",
-        value = range_view  # a length-2 POSIXct for start/end in the display offset
-      )
-
-      #update
-      # after computing r0 (aligned UTC range) and step0
       updateAirDateInput(session, "start_dt", value = to_view_time(r0[1]))
       updateAirDateInput(session, "end_dt",   value = to_view_time(r0[2]))
-
-      ##
-      updateSliderInput(
-        session, "time_rng",
-        min = r0[1], max = r0[2], value = r0,
-        step = step0, timeFormat = "%Y-%m-%d\n%H:%M"
+      updateSliderInput(session, "time_rng",
+                        min = r0[1], max = r0[2], value = r0,
+                        step = step0, timeFormat = "%Y-%m-%d\n%H:%M"
       )
     } else {
-      updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0, 1))
+      updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0, 1), step = 3600)
     }
+
 
 
 
@@ -1678,6 +1756,11 @@ server <- function(input, output, session) {
   # Render the Plotly scatter (with event_register)
   # ────────────────────────────────────────────────────────────────────────────
 output$qc_plot <- renderPlotly({
+  overlay_on <- isTRUE(input$overlay_mode)
+  vars_plot  <- unique(c(if (isTRUE(input$overlay_include_y)) input$yvar, input$overlay_vars))
+  if (!length(vars_plot)) vars_plot <- input$yvar
+
+
   df0 <- df_by_year()
   req(df0, input$xvar, input$yvar)
 
@@ -1695,42 +1778,184 @@ output$qc_plot <- renderPlotly({
     p <- plotly::plot_ly(source = "qc_plot") %>%
       plotly::event_register("plotly_selected")
 
-    # main traces
-    for (v in vars_plot) {
+    # choose renderer
+    scatter_type <- if (isTRUE(input$overlay_use_gl)) "scattergl" else "scatter"
+
+    cols <- pal_overlay(length(vars_plot)); names(cols) <- vars_plot
+
+    #keep?
+    resample_base <- function(df, nmax) {
+      if (!NROW(df) || is.null(nmax) || !is.finite(nmax) || NROW(df) <= nmax) return(df)
+      df[sample.int(NROW(df), nmax), , drop = FALSE]
+    }
+    #
+
+
+    for (i in seq_along(vars_plot)) {
+      v  <- vars_plot[i]
+
       dd <- df %>%
-        dplyr::filter(!is.na(.data[[v]]), !is.na(.data[[input$xvar]]))
-      if (NROW(dd) == 0) next
+        dplyr::filter(!is.na(.data[[v]]), !is.na(.data[[input$xvar]])) %>%
+        resample_base(input$overlay_maxpts)
+
+
+
+      if (!NROW(dd)) next
+
       xvec <- if (identical(input$xvar, "TIMESTAMP_START")) dd$ts_view else dd[[input$xvar]]
-      p <- p %>% plotly::add_markers(
-        data = dd,
-        x = xvec, y = dd[[v]],
-        key = paste(dd$ts_str, v, sep = "||"),   # key encodes ts + var
-        name = v,
-        marker = list(opacity = 0.8),
-        inherit = FALSE
-      )
+
+      # tiny horizontal offset to separate coincident timestamps
+      if (identical(input$xvar, "TIMESTAMP_START") && input$overlay_xnudge > 0) {
+        n <- length(vars_plot)
+        xvec <- xvec + (i - (n + 1)/2) * input$overlay_xnudge
+      }
+
+      colv <- cols[[v]]
+
+      if (isTRUE(input$overlay_hollow)) {
+        # hollow rings (stroke only) → easier to see overlaps
+        p <- p %>% plotly::add_trace(
+          data  = dd, type = scatter_type, mode = "markers",
+          x = xvec, y = dd[[v]],
+          key    = paste(dd$ts_str, v, sep = "||"),
+          name   = v, inherit = FALSE,
+          marker = list(
+            symbol = "circle-open",
+            size   = input$overlay_size,
+            color  = colv,                       # stroke
+            opacity= input$overlay_alpha,
+            line   = list(width = 1.5, color = colv)
+          )
+        )
+      } else {
+        # filled but very transparent
+        p <- p %>% plotly::add_trace(
+          data  = dd, type = scatter_type, mode = "markers",
+          x = xvec, y = dd[[v]],
+          key    = paste(dd$ts_str, v, sep = "||"),
+          name   = v, inherit = FALSE,
+          marker = list(
+            symbol = "circle",
+            size   = input$overlay_size,
+            color  = hex_to_rgba(colv, input$overlay_alpha),
+            line   = list(width = 0.5, color = colv)
+          )
+        )
+      }
     }
 
-    # flagged (orange) per variable
+    # flagged points → soft halo (no outline)
     for (v in vars_plot) {
       ts_v <- removed_ts[[v]] %||% character()
       if (!length(ts_v)) next
+
       dd_flag <- df %>%
         dplyr::filter(ts_str %in% ts_v,
                       !is.na(.data[[v]]),
                       !is.na(.data[[input$xvar]]))
-      if (NROW(dd_flag) == 0) next
+
+      if (!NROW(dd_flag)) next
+
       xvecf <- if (identical(input$xvar, "TIMESTAMP_START")) dd_flag$ts_view else dd_flag[[input$xvar]]
+      if (identical(input$xvar, "TIMESTAMP_START") && input$overlay_xnudge > 0) {
+        n <- length(vars_plot); i <- match(v, vars_plot)
+        xvecf <- xvecf + (i - (n + 1)/2) * input$overlay_xnudge
+      }
+
       p <- p %>% plotly::add_markers(
         data = dd_flag,
         x = xvecf, y = dd_flag[[v]],
-        key = paste(dd_flag$ts_str, v, sep = "||"),
+        key  = paste(dd_flag$ts_str, v, sep = "||"),
         name = paste0(v, " (flagged)"),
-        marker = list(size = 10, color = "#FFC107", line = list(width = 1)),
-        inherit = FALSE,
-        showlegend = FALSE
+        legendgroup = v, showlegend = FALSE, inherit = FALSE,
+        hoverinfo = "skip",
+        marker = list(
+          size   = input$overlay_size + 6,
+          color  = cols[[v]],
+          #opacity= input$overlay_flag_halo,
+          line   = list(width = 0)
+        )
       )
     }
+
+    # nicer legend interactions
+    p <- p %>% plotly::layout(
+      legend = list(itemclick = "toggleothers", itemdoubleclick = "toggle")
+    )
+
+
+    # main traces
+
+    # cols <- pal_overlay(length(vars_plot)); names(cols) <- vars_plot
+    #
+    # for (v in vars_plot) {
+    #   dd <- df %>% dplyr::filter(!is.na(.data[[v]]), !is.na(.data[[input$xvar]]))
+    #   if (NROW(dd) == 0) next
+    #   xvec <- if (identical(input$xvar, "TIMESTAMP_START")) dd$ts_view else dd[[input$xvar]]
+    #
+    #   p <- p %>% plotly::add_markers(
+    #     data = dd,
+    #     x = xvec, y = dd[[v]],
+    #     key = paste(dd$ts_str, v, sep = "||"),
+    #     name = v,
+    #     marker = list(opacity = 0.85, color = cols[[v]]),
+    #     inherit = FALSE
+    #   )
+    # }
+
+    # # flagged per variable — tinted + halo to match series (no white outline)
+    # # flagged per variable — single soft dot, no outline
+    # for (v in vars_plot) {
+    #   ts_v <- removed_ts[[v]] %||% character()
+    #   if (!length(ts_v)) next
+    #   dd_flag <- df %>%
+    #     dplyr::filter(ts_str %in% ts_v,
+    #                   !is.na(.data[[v]]),
+    #                   !is.na(.data[[input$xvar]]))
+    #   if (NROW(dd_flag) == 0) next
+    #   xvecf <- if (identical(input$xvar, "TIMESTAMP_START")) dd_flag$ts_view else dd_flag[[input$xvar]]
+    #
+    #   series_col <- cols[[v]]
+    #   p <- p %>% plotly::add_markers(
+    #     data = dd_flag,
+    #     x = xvecf, y = dd_flag[[v]],
+    #     key  = paste(dd_flag$ts_str, v, sep = "||"),
+    #     name = paste0(v, " (flagged)"),
+    #     legendgroup = v, showlegend = FALSE, inherit = FALSE,
+    #     hoverinfo = "skip",
+    #     marker = list(
+    #       size = 11,
+    #       color = series_col,
+    #       opacity = if (isTRUE(input$dark_mode)) 0.35 else 0.25,
+    #       line = list(width = 0)
+    #     )
+    #   )
+    # }
+
+
+
+
+
+    # # flagged (orange) per variable
+    # for (v in vars_plot) {
+    #   ts_v <- removed_ts[[v]] %||% character()
+    #   if (!length(ts_v)) next
+    #   dd_flag <- df %>%
+    #     dplyr::filter(ts_str %in% ts_v,
+    #                   !is.na(.data[[v]]),
+    #                   !is.na(.data[[input$xvar]]))
+    #   if (NROW(dd_flag) == 0) next
+    #   xvecf <- if (identical(input$xvar, "TIMESTAMP_START")) dd_flag$ts_view else dd_flag[[input$xvar]]
+    #   p <- p %>% plotly::add_markers(
+    #     data = dd_flag,
+    #     x = xvecf, y = dd_flag[[v]],
+    #     key = paste(dd_flag$ts_str, v, sep = "||"),
+    #     name = paste0(v, " (flagged)"),
+    #     marker = list(size = 10, color = "#FFC107", line = list(width = 1)),
+    #     inherit = FALSE,
+    #     showlegend = FALSE
+    #   )
+    # }
 
     p <- p %>% plotly::layout(
       autosize = TRUE, dragmode = "select", font = list(size = 18),
@@ -1814,17 +2039,26 @@ output$qc_plot <- renderPlotly({
   }
 
   if (length(sel_keys()) > 0) {
-    p <- p %>% plotly::add_trace(
-      data = dplyr::filter(dfc, .row %in% sel_keys()),
-      x    = if (identical(input$xvar, "TIMESTAMP_START")) ~ts_view else ~.data[[input$xvar]],
-      y    = ~.data[[input$yvar]],
-      mode = "markers",
-      type = "scatter",
-      marker = list(color = "#FFC107"),
-      inherit = FALSE,
-      showlegend = FALSE
+    df_flag1 <- dplyr::filter(dfc, .row %in% sel_keys())
+    xcol_nm  <- if (identical(input$xvar, "TIMESTAMP_START")) "ts_view" else input$xvar
+
+    p <- p %>% plotly::add_markers(
+      data = df_flag1,
+      x = df_flag1[[xcol_nm]],
+      y = df_flag1[[input$yvar]],
+      inherit = FALSE, showlegend = FALSE, hoverinfo = "skip",
+      marker = list(
+        symbol = "circle-open",
+        size   = 11,
+        color  = "rgba(0,0,0,0)",
+        line   = list(width = 2, color = marker_blue),
+        opacity= 1
+      )
     )
   }
+
+
+
 
   if (isTRUE(input$dark_mode)) {
     p <- p %>% plotly::layout(
@@ -2166,7 +2400,7 @@ output$qc_plot <- renderPlotly({
   # Replace your existing is_snapping/observeEvent(input$time_rng, ...) with this:
   observeEvent(time_rng_debounced(), ignoreInit = TRUE, {
     df <- df_by_year(); req(df)
-    pool <- sort(unique(df$TIMESTAMP_START[!is.na(df$TIMESTAMP_START)]))
+    pool <- sort(unique(df$TIMESTAMP_START[ rows_for_time(df) ]))
     if (length(pool) < 2) return()
 
     tr   <- time_rng_debounced()
@@ -2186,69 +2420,13 @@ output$qc_plot <- renderPlotly({
     }
   })
 
-  observeEvent(list(input$start_dt, input$end_dt), ignoreInit = TRUE, {
-    req(input$start_dt, input$end_dt)
-    df <- df_by_year(); req(df)
-
-    pool <- sort(unique(df$TIMESTAMP_START[!is.na(df$TIMESTAMP_START)]))
-    if (length(pool) < 2) return()
-
-    s <- snap_to_pool(from_view_time(input$start_dt), pool)
-    e <- snap_to_pool(from_view_time(input$end_dt),   pool)
-    if (e < s) e <- s
-
-    if (!identical(as.numeric(c(s, e)), as.numeric(input$time_rng))) {
-      updateSliderInput(session, "time_rng", value = c(s, e))
-    }
-  })
 
 
 
   # helper once
   snap_to_pool <- function(x, pool) pool[ which.min(abs(as.numeric(pool) - as.numeric(x))) ]
 
-  observeEvent(list(input$start_dt, input$end_dt), ignoreInit = TRUE, {
-    req(input$start_dt, input$end_dt)
-    df <- df_by_year(); y <- input$yvar; req(df, y)
-
-    pool <- sort(unique(df$TIMESTAMP_START[!is.na(df[[y]]) & !is.na(df$TIMESTAMP_START)]))
-    if (length(pool) < 2) return()
-
-    s <- snap_to_pool(from_view_time(input$start_dt), pool)
-    e <- snap_to_pool(from_view_time(input$end_dt),   pool)
-    if (e < s) e <- s
-
-    if (!identical(as.numeric(c(s, e)), as.numeric(input$time_rng))) {
-      updateSliderInput(session, "time_rng", value = c(s, e))
-    }
-  })
-
-
-  # observeEvent(input$end_dt, ignoreInit = TRUE, {
-  #   req(input$start_dt, input$end_dt)
-  #   df <- df_by_year(); y <- input$yvar; req(df, y)
-  #
-  #   pool <- sort(unique(df$TIMESTAMP_START[!is.na(df[[y]]) & !is.na(df$TIMESTAMP_START)]))
-  #   if (length(pool) < 2) return()
-  #
-  #   s_utc <- from_view_time(input$start_dt)
-  #   e_utc <- from_view_time(input$end_dt)
-  #
-  #   s <- snap_to_pool(s_utc, pool)
-  #   e <- snap_to_pool(e_utc, pool)
-  #   if (e < s) e <- s  # clamp
-  #
-  #   if (!identical(as.numeric(c(s, e)), as.numeric(input$time_rng))) {
-  #     updateSliderInput(session, "time_rng", value = c(s, e))
-  #   }
-  # })
-  #
-
-
-
-
-
-  # ────────────────────────────────────────────────────────────────────────────
+#   ──────────────────────────────────────────────────────────────────
   # DOWNLOAD HANDLER for “Download cleaned CSV”
   # ────────────────────────────────────────────────────────────────────────────
   output$download_data <- downloadHandler(
