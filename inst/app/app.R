@@ -1,3 +1,7 @@
+#how to make left panel collapsible but have the flag options still show up?
+#how to add smoothed line option (with options for how smoothed)
+#how to assign colors for each variable without being a huge pain
+
 library(shiny)
 library(plotly)
 library(dplyr)
