@@ -2,7 +2,6 @@ library(shiny)
 library(plotly)
 library(dplyr)
 library(bslib)     # for theming
-library(fluxtools)
 library(shinyWidgets) #for time selector
 
 # Allow larger uploads (here: up to 1gb)
@@ -211,7 +210,7 @@ document.addEventListener('keydown', function(e){
      tags$details(
        # default is closed; omit or set open = FALSE
        # open = FALSE,
-       tags$summary(HTML('<i class="fa fa-globe"></i> Set Timezone (display only)')),
+       tags$summary(HTML('<i class="fa fa-globe"></i> Set Timezone')),
 
        # UTC select with tooltipbed label
        div(class = "mb-2 mt-2",
@@ -220,7 +219,7 @@ document.addEventListener('keydown', function(e){
              `for` = "data_offset",
              "View TIMESTAMP_START in:",
              'data-bs-toggle' = "tooltip",
-             title = "Display only; no DST. Exports & code keep original timestamps."
+             title = "Fixed timestamp; no DST"
            ),
            selectInput(
              "data_offset", label = NULL,
@@ -639,15 +638,19 @@ bslib::accordion_panel(
 
         column(
           3,
-          downloadButton("download_data", "Export zip file", icon = icon("file-archive"), width="100%"),
-          'data-bs-toggle' = "tooltip",
-          title = "Download a .zip containing the cleaned CSV (with NAs applied using the 'Apply Removals' button) and the removal R-script"
+          tagAppendAttributes(
+            downloadButton("download_data", "Export zip file", icon = icon("file-archive"), width="100%"),
+            'data-bs-toggle' = "tooltip",
+            title = "Download a .zip containing the cleaned CSV (with NAs applied using the 'Apply Removals' button) and the removal R-script"
+          )
         ),
         column(
           3,
-          actionButton("reset_data", "Reload original data", icon = icon("eraser"), width="100%"),
-          'data-bs-toggle' = "tooltip",
-          title = "Reset any changes by re-loading the original .csv file"
+          tagAppendAttributes(
+            actionButton("reset_data", "Reload original data", icon = icon("eraser"), width="100%"),
+            'data-bs-toggle' = "tooltip",
+            title = "Reset any changes by re-loading the original .csv file"
+          )
         ),
         column(
           3,
@@ -710,9 +713,10 @@ server <- function(input, output, session) {
 
     overlay_on <- isTRUE(input$overlay_mode) && length(input$overlay_vars)
     if (overlay_on) {
+      # inside output$pair_legend, overlay branch
       vars_plot <- unique(c(if (isTRUE(input$overlay_include_y)) input$yvar, input$overlay_vars))
       cols  <- pal_overlay(length(vars_plot)); names(cols) <- vars_plot
-      #fcols <- flag_cols_for(vars_plot, cols, flag_scheme())
+      fcols <- flag_cols_for(vars_plot, cols, flag_scheme())  # ← add this
 
       tagList(
         tags$h6("Color key"),
@@ -814,22 +818,22 @@ server <- function(input, output, session) {
     if (is.null(sel)) integer(0) else sel$key
   })
 
-  flag_cols_for <- function(vars, base_cols, scheme = "match_dark") {
-    n <- length(vars); if (!n) return(setNames(character(0), character(0)))
-    scheme <- scheme %||% "match_dark"
-
-    if (scheme == "yellow")
-      return(setNames(rep("#FFC20A", n), vars))
-
-    if (scheme == "match_dark")
-      return(setNames(vapply(base_cols, function(h) darken_hex(h, .50), ""), vars))
-
-    if (scheme == "match_light")
-      return(setNames(vapply(base_cols, function(h) tint_hex(h, .60), ""), vars))
-
-    # fallback
-    setNames(vapply(base_cols, function(h) darken_hex(h, .50), ""), vars)
-  }
+  # flag_cols_for <- function(vars, base_cols, scheme = "match_dark") {
+  #   n <- length(vars); if (!n) return(setNames(character(0), character(0)))
+  #   scheme <- scheme %||% "match_dark"
+  #
+  #   if (scheme == "yellow")
+  #     return(setNames(rep("#FFC20A", n), vars))
+  #
+  #   if (scheme == "match_dark")
+  #     return(setNames(vapply(base_cols, function(h) darken_hex(h, .50), ""), vars))
+  #
+  #   if (scheme == "match_light")
+  #     return(setNames(vapply(base_cols, function(h) tint_hex(h, .60), ""), vars))
+  #
+  #   # fallback
+  #   setNames(vapply(base_cols, function(h) darken_hex(h, .50), ""), vars)
+  # }
 
 
   # Auto-pick “pairs” for color-blind friendly palettes; else use user choice
@@ -1035,22 +1039,7 @@ server <- function(input, output, session) {
     )
   })
 
-  observeEvent(input$remove_acc, {
-    pairs <- selected_pairs()
-    if (nrow(pairs) == 0) return()
 
-    keep_vars <- intersect(unique(pairs$var), names(rv$df) %||% character())
-    if (!length(keep_vars)) return()
-
-    rows <- df_by_year()$.row[df_by_year()$ts_str %in% pairs$ts]
-    sel_keys(setdiff(isolate(sel_keys()), rows))
-
-    byv <- split(pairs$ts[pairs$var %in% keep_vars], pairs$var[pairs$var %in% keep_vars])
-    for (v in names(byv)) {
-      old <- removed_ts[[v]] %||% character()
-      removed_ts[[v]] <- setdiff(old, unique(byv[[v]]))
-    }
-  })
 
   observeEvent(input$time_flag, {
     tr <- input$time_rng; req(tr)
@@ -1101,8 +1090,8 @@ server <- function(input, output, session) {
   })
 
   #Date selection helper
-  to_view_time   <- function(x) as.POSIXct(as.numeric(x) + data_off_hr()*3600, origin="1970-01-01", tz = data_tz())
-  from_view_time <- function(x) as.POSIXct(as.numeric(x) - data_off_hr()*3600, origin="1970-01-01", tz = "UTC")
+  #to_view_time   <- function(x) as.POSIXct(as.numeric(x) + data_off_hr()*3600, origin="1970-01-01", tz = data_tz())
+  #from_view_time <- function(x) as.POSIXct(as.numeric(x) - data_off_hr()*3600, origin="1970-01-01", tz = "UTC")
 
   # raw csv
   raw_df <- reactive({
@@ -1119,26 +1108,24 @@ server <- function(input, output, session) {
   shifted_df <- reactive({
     df0 <- raw_df(); req(df0)
 
-    # keep only digits, right-pad minutes to 12 chars
+    # keep only digits, right-pad minutes to 12 chars (YYYYMMDDHH or YYYYMMDD)
     digits <- gsub("[^0-9]", "", df0$TIMESTAMP_START %||% "")
-    digits <- substr(paste0(digits, "0000"), 1, 12)  # YYYYMMDDHH or YYYYMMDD
+    digits <- substr(paste0(digits, "0000"), 1, 12)
 
-    # parse as absolute UTC — NO shifting here
-    ts_utc <- as.POSIXct(digits, format = "%Y%m%d%H%M", tz = "UTC")
-
-    if (!any(!is.na(ts_utc))) {
-      showNotification("Could not parse TIMESTAMP_START.", type = "error", duration = 8)
-      req(FALSE)
-    }
+    # parse "clock time" and map to absolute UTC by removing the (fixed) offset
+    off_hr <- data_off_hr()
+    ts_local_as_utc <- as.POSIXct(digits, format = "%Y%m%d%H%M", tz = "UTC")
+    ts_utc          <- ts_local_as_utc - off_hr*3600
 
     df0 %>%
       mutate(
-        raw_ts          = TIMESTAMP_START,
-        ts_str          = digits,
-        TIMESTAMP_START = ts_utc,
+        raw_ts          = TIMESTAMP_START,  # original string kept for export/code
+        ts_str          = digits,           # canonical "YYYYMMDDHHMM" key
+        TIMESTAMP_START = ts_utc,           # absolute UTC inside the app
         .row            = dplyr::row_number()
       )
   })
+
 
   output$subtitle <- renderUI({
     req(rv$df)
@@ -1188,6 +1175,16 @@ server <- function(input, output, session) {
 
 
   #color overlay end
+
+  #UTC helper
+  to_view_time   <- function(x)
+    as.POSIXct(as.numeric(x) + data_off_hr()*3600,
+               origin = "1970-01-01", tz = data_tz())
+
+  from_view_time <- function(x)
+    as.POSIXct(as.numeric(x) - data_off_hr()*3600,
+               origin = "1970-01-01", tz = "UTC")
+
 
   #PRM Server
   observeEvent(input$apply_prm_subset, {
@@ -1300,12 +1297,12 @@ server <- function(input, output, session) {
     )
   })
 
-  # toggle a 'dark-mode' class on <body>
-  observe({
-    addClass  <- if (isTRUE(input$dark_mode)) "dark-mode" else ""
-    removeClass <- if (isTRUE(input$dark_mode)) "" else "dark-mode"
-    #session$sendCustomMessage("toggleBodyClass", list(add=addClass, remove=removeClass))
-  })
+  # # toggle a 'dark-mode' class on <body>
+  # observe({
+  #   addClass  <- if (isTRUE(input$dark_mode)) "dark-mode" else ""
+  #   removeClass <- if (isTRUE(input$dark_mode)) "" else "dark-mode"
+  #   #session$sendCustomMessage("toggleBodyClass", list(add=addClass, remove=removeClass))
+  # })
 
   #overlay
   observe({
@@ -2463,7 +2460,13 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
 
 
       # 6) Zip everything
-      utils::zip(zipfile, files = extra_files, flags = "-j", extras = "-q")
+      try(utils::zip(zipfile, files = extra_files, flags = "-j", extras = "-q"),
+          silent = TRUE)
+      if (!file.exists(zipfile) && requireNamespace("zip", quietly = TRUE)) {
+        zip::zipr(zipfile, files = extra_files)
+      }
+
+      #utils::zip(zipfile, files = extra_files, flags = "-j", extras = "-q")
     }
   )
 
@@ -2483,6 +2486,24 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
       removed_ts[[v]] <- setdiff(old, unique(byv[[v]]))
     }
   })
+#slider fix
+  observeEvent(input$start_dt, {
+    df <- df_by_year(); req(df, input$start_dt)
+    pool <- sort(unique(df$TIMESTAMP_START[ rows_for_time(df) ])); if (!length(pool)) return()
+    s <- snap_to_pool(from_view_time(input$start_dt), pool)
+    e <- isolate(input$time_rng[2]); if (is.null(e) || s > e) e <- s
+    updateSliderInput(session, "time_rng", value = c(s, e))
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$end_dt, {
+    df <- df_by_year(); req(df, input$end_dt)
+    pool <- sort(unique(df$TIMESTAMP_START[ rows_for_time(df) ])); if (!length(pool)) return()
+    e <- snap_to_pool(from_view_time(input$end_dt), pool)
+    s <- isolate(input$time_rng[1]); if (is.null(s) || e < s) s <- e
+    updateSliderInput(session, "time_rng", value = c(s, e))
+  }, ignoreInit = TRUE)
+
+
 
   #overlay
   observeEvent(input$overlay_mode, {
@@ -2495,6 +2516,7 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
       showNotification("Overlay off: cleared staged flags for non-Y variables.", type="message", duration=2)
     }
   }, ignoreInit = TRUE)
+
 
   observeEvent(input$remove, {
     pairs  <- selected_pairs()                         # ts + var from plotly keys
