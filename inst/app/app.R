@@ -3,6 +3,7 @@ library(plotly)
 library(dplyr)
 library(bslib)     # for theming
 library(shinyWidgets) #for time selector
+library(readr)
 
 # Allow larger uploads (here: up to 1gb)
 options(shiny.maxRequestSize = 1024 * 1024 * 1024) #1gb
@@ -777,7 +778,9 @@ server <- function(input, output, session) {
       # Put back the original timestamp string, then drop helper cols
       out$TIMESTAMP_START <- out$raw_ts
       out <- dplyr::select(out, -raw_ts, -ts_str, -.row)
-      utils::write.csv(out, file, row.names = FALSE, na = "NA")
+      #enhance number of decimals written
+      readr::write_csv(out, file, na = "NA", num_threads = 1)
+      #utils::write.csv(out, file, row.names = FALSE, na = "NA")
     }
   )
 
@@ -2294,7 +2297,8 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
 
       # 0) ORIGINAL input (what the scripts will read)
       orig_path <- file.path(tmpdir, "raw_df.csv")
-      write.csv(raw_df(), orig_path, row.names = FALSE, na = "NA")
+      readr::write_csv(raw_df(), orig_path, na = "NA", num_threads = 1)
+      #write.csv(raw_df(), orig_path, row.names = FALSE, na = "NA")
 
       # 1) CLEANED CSV reflecting in-app removals
       csv_name <- paste0("fluxtools_processed_df_", Sys.Date(), ".csv")
@@ -2303,7 +2307,8 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
       out <- rv$df
       out$TIMESTAMP_START <- out$raw_ts          # keep original strings
       out <- dplyr::select(out, -raw_ts, -ts_str, -.row)
-      write.csv(out, csv_path, row.names = FALSE, na = "NA")
+      readr::write_csv(out, csv_path, na = "NA", num_threads = 1)
+      #write.csv(out, csv_path, row.names = FALSE, na = "NA")
 
       # Build a colClasses vector from the data we’re writing (no separate file)
       base_df <- raw_df()
@@ -2319,12 +2324,6 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
         paste(sprintf("'%s'='%s'", names(cc_vec), unname(cc_vec)), collapse = ", "),
         ")"
       )
-#
-#       helper  <- df_by_year()
-#       for (col in setdiff(names(base_df), "TIMESTAMP_START")) {
-#         if (col %in% names(helper)) base_df[[col]] <- helper[[col]]
-#       }
-#       write.csv(base_df, csv_path, row.names = FALSE, na = "NA")
 
       # 2) Main manual-removal script
       script_name <- "fluxtools_removal_script.R"
@@ -2338,7 +2337,8 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
       # 3) Include PRM summary if present
       if (isTRUE(rv$prm_active) && !is.null(rv$prm_summary)) {
         prm_csv <- file.path(tmpdir, "prm_summary.csv")
-        write.csv(rv$prm_summary, prm_csv, row.names = FALSE, na = "NA")
+        readr::write_csv(rv$prm_summary, prm_csv, na = "NA", num_threads = 1)
+        #write.csv(rv$prm_summary, prm_csv, row.names = FALSE, na = "NA")
         extra_files <- c(extra_files, prm_csv)
       }
 
@@ -2399,10 +2399,18 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
         lines <- c(lines, "## (No manual removals were confirmed in the app)", "")
       }
 
-      lines <- c(lines, "write.csv(df, 'fluxtools_processed.csv', row.names = FALSE, na = 'NA')")
+      #lines <- c(lines, "write.csv(df, 'fluxtools_processed.csv', row.names = FALSE, na = 'NA')")
+      lines <- c(
+        lines,
+        "if (requireNamespace('readr', quietly = TRUE)) {",
+        "  readr::write_csv(df, 'fluxtools_processed.csv', na = 'NA', num_threads = 1)",
+        "} else {",
+        "  utils::write.csv(df, 'fluxtools_processed.csv', row.names = FALSE, na = 'NA')",
+        "}"
+      )
+
       writeLines(lines, script_path)
 
-      # 5) PRM audit → wide + long + manual replay script
       # 5) PRM audit → write manual_prm_removed.R only (no CSV)
       if (isTRUE(rv$prm_active) && !is.null(rv$prm_mask)) {
         removed_list <- lapply(names(rv$prm_mask), function(nm) {
@@ -2449,10 +2457,7 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
               ""
             )
           }
-#is this correct...???
-          # lines_manual <- c(lines_manual,
-          #                   "write.csv(df, 'prm_manual_removal.csv', row.names = FALSE, na = 'NA')"
-          #)
+
           writeLines(lines_manual, manual_script)
           extra_files <- c(extra_files, manual_script)  # <- script only, no CSV
         }

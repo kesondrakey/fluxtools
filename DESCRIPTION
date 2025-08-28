@@ -1,7 +1,7 @@
 Type: Package
 Package: fluxtools
 Title: A 'shiny' App for Reproducible QA/QC of Eddy Covariance Data
-Version: 0.6.1
+Version: 0.6.2
 Authors@R: 
     person("Kesondra", "Key", , "keyke@iu.edu", role = c("aut", "cre"))
 Description: An interactive 'shiny'-based tool for exploration and quality
@@ -19,6 +19,7 @@ Depends:
 Imports: 
     dplyr,
     plotly,
+    readr,
     shiny,
     tibble
 Suggests: 
