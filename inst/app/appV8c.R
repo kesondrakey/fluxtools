@@ -14,10 +14,10 @@
 #Getting errors... unsure this is worth it
 #UTC stuff - not sure this is being done correctly. takes raw data and -5 for UTC-5 when data is already in  eastern timezone. hrm...
 
-
+#Flags work in comparison mode but only for dataset 1!
 
 # - [ ]  how to assign colors for each variable without being a huge pain
-# - [ ]  two data comparison option? this would allow the user to upload a second dataset. but I fear this will be really complicated given all the options?
+# - [ ]  two data comparison option? this would allow the user to upload a second dataset
 # the goal for second dataset is for data comparison, not necessarily flagging! is there a good way to do this?
 
 #Packages
@@ -51,6 +51,7 @@ dark_theme <- bs_theme(
 )
 
 #UI----
+
 #<head> assets in one object
 head_assets <- tags$head(
   # ⬇️ paste your exact tags$style / tags$script blocks here
@@ -128,6 +129,16 @@ head_assets <- tags$head(
       }
     });
     ")),
+
+  #for colors
+  tags$script(HTML('
+  Shiny.addCustomMessageHandler("markBadHex", function(x){
+    var el = document.getElementById(x.id);
+    if(!el) return;
+    if(x.bad) el.classList.add("bad-hex"); else el.classList.remove("bad-hex");
+  });
+')),
+
 
 
   tags$script(HTML("
@@ -249,9 +260,9 @@ sidebar_controls <- sidebarPanel(
           tags$label(
             id    = "data_offset_label",
             `for` = "data_offset",
-            "View TIMESTAMP_START in:",
+            "Interpret TIMESTAMP_START as local time in:",
             'data-bs-toggle' = "tooltip",
-            title = "Fixed timestamp; no DST"
+            title = "Fixed timestamp; no DST (Raw timestamps are not changed)"
           ),
           selectInput(
             "data_offset", label = NULL,
@@ -273,25 +284,17 @@ sidebar_controls <- sidebarPanel(
   #Compare option:
   tags$h5("Compare two datasets"),
 
+  #This is too complicated at the moment, need to simplify color and line options here. per dataset makes more sense than per variable for two data comparision
+
   checkboxInput("compare_mode", "Compare two datasets", FALSE),
   conditionalPanel("input.compare_mode",
-                   fileInput("csv_file_b", "Upload comparison CSV (*Dataset B):", accept = ".csv"),
-                   radioButtons("compare_style", "Color mapping",
-                                c("Color by variable; linetype by dataset" = "varcolor",
-                                  "Color by dataset; facet by variable"   = "dscolor"),
-                                inline = FALSE),
+                   tags$h6("Dataset B"),
+                   fileInput("csv_file_b", "Upload comparison CSV:", accept = ".csv"),
 
-                   # let user override colors for variables of interest
-                   checkboxInput("enable_var_colors", "Custom colors for variables", FALSE),
-                   conditionalPanel("input.enable_var_colors",
-                                    uiOutput("var_color_ui")
-                   ),
-
-
-                   conditionalPanel("input.compare_mode",
-                                    textInput("label_a", "Label for Dataset A", "Dataset A"),
-                                    textInput("label_b", "Label for *Dataset B", "Dataset B")
-                   )
+                   # --- Dataset color pickers (simple, no extra pkgs) ---
+                   #also have line type options!
+                   tags$h6("Dataset colors"),
+                   uiOutput("ds_color_ui")
 
 
 
@@ -854,6 +857,23 @@ server <- function(input, output, session) {
     .current_phase_icons(input$hod_rng, isTRUE(input$hod_invert))
   })
 
+  #NA strings for r script output
+  NA_STRINGS <- c("NA","NaN","","-9999","-9999.0","-9999.00","-9999.000")
+
+
+  #RV
+  #PRM
+  # --- init reactive stores early (so we can use rv immediately) ---
+  rv <- reactiveValues(
+    df = NULL,
+    df_before_prm = NULL,
+    prm_active = FALSE,
+    prm_summary = NULL,
+    prm_mask = NULL,
+    prm_include = NULL   # <- add this
+  )
+  #
+
 
   #TEST
 
@@ -929,19 +949,7 @@ server <- function(input, output, session) {
     for (v in vars) if (is.null(var_colors[[v]])) var_colors[[v]] <- defaults[[v]]
   })
 
-  output$var_color_ui <- renderUI({
-    req(rv$df)
-    vars <- names(rv$df %>% dplyr::select(where(is.numeric)))
-    tagList(
-      tags$small(class="text-muted","Overrides palette for selected variables."),
-      lapply(vars, function(v){
-        colourInput::colourInput(
-          inputId = paste0("col_", v),
-          label   = v, value = var_colors[[v]], showColour = "both", allowTransparent = FALSE
-        )
-      })
-    )
-  })
+
 
   # keep map in sync with inputs
   observe({
@@ -955,12 +963,33 @@ server <- function(input, output, session) {
     }
   })
 
+  # validate & store
+  .valid_hex <- function(x) isTRUE(grepl("^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$", x))
+  observe({
+    if (!isTRUE(input$enable_var_colors)) return()
+    req(rv$df)
+    vars <- names(rv$df %>% dplyr::select(where(is.numeric)))
+    for (v in vars) {
+      id  <- paste0("col_", v)
+      val <- input[[id]]
+      # keep defaults if empty
+      if (is.null(val) || !nzchar(val)) next
+      # set reactive map only when valid
+      if (.valid_hex(val)) var_colors[[v]] <- toupper(val)
+      # mark invalid in the DOM (no extra libs)
+      session$sendCustomMessage("markBadHex", list(id = id, bad = !.valid_hex(val)))
+    }
+  })
+  # JS helper once (near your other addCustomMessageHandler blocks)
+  session$onFlushed(function(){
+    session$sendCustomMessage("noop", NULL)
+  }, once = TRUE)
+
+
 
   #END TEST
 
 
-  #NA strings for r script output
-  NA_STRINGS <- c("NA","NaN","","-9999","-9999.0","-9999.00","-9999.000")
 
 
   # returns the proper x vector for the given data.frame and current xvar
@@ -970,7 +999,128 @@ server <- function(input, output, session) {
 
 
   # small helper used later
+  # NULL-coalescing that’s safe for vectors
   `%||%` <- function(x, y) if (is.null(x)) y else x
+
+  # # NULL-coalescing that’s safe for vectors
+  # `%||%` <- function(x, y) {
+  #   if (is.null(x)) return(y)
+  #   # optionally treat a single empty string as NULL
+  #   if (is.character(x) && length(x) == 1 && !nzchar(x)) return(y)
+  #   x
+  # }
+
+
+  #color helpers
+  .valid_hex <- function(x) isTRUE(grepl("^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$", x))
+
+  # Pretty label helper for colored swatches
+  .pretty_opt <- function(hex_or_custom) {
+    if (hex_or_custom == "custom") return(HTML("Custom…"))
+    HTML(sprintf(
+      "<span style='display:inline-block;width:0.9em;height:0.9em;border-radius:50%%;margin-right:.4em;background:%s;'></span>%s",
+      hex_or_custom, hex_or_custom
+    ))
+  }
+
+
+  # --- dataset color choices (plain values, no HTML labels) ---
+  # ds_vals <- c("#fe4a49", "#009fb7", "#721cb8", "#509724",
+  #              "#ffbf00", "#1F77B4", "#FF7F0E", "custom")
+
+  # # build HTML labels (as strings)
+  # label_html <- function(hex) {
+  #   if (hex == "custom") return("Custom…")
+  #   sprintf(
+  #     "<span style='display:inline-block;width:0.9em;height:0.9em;border-radius:50%%;margin-right:.4em;background:%s;'></span>%s",
+  #     hex, hex
+  #   )
+  # }
+  # labels <- vapply(vals, label_html, "")
+  #
+  # # A
+  # shinyWidgets::pickerInput(
+  #   inputId = "pick_ds_A", label = "Dataset A color",
+  #   choices = vals, selected = "#1F77B4",
+  #   options = list(`live-search` = FALSE),
+  #   choicesOpt = list(content = as.list(labels))  # <- allow HTML per option
+  # )
+  #
+  # # B
+  # shinyWidgets::pickerInput(
+  #   inputId = "pick_ds_B", label = "Dataset B color",
+  #   choices = vals, selected = "#FF7F0E",
+  #   options = list(`live-search` = FALSE),
+  #   choicesOpt = list(content = as.list(labels))
+  # )
+
+
+  output$ds_color_ui <- renderUI({
+    # same values you defined earlier
+    ds_vals <- c("#fe4a49", "#009fb7", "#721cb8", "#509724",
+                 "#ffbf00", "#1F77B4", "#FF7F0E", "custom")
+
+    label_html <- function(hex) {
+      if (hex == "custom") return("Custom…")
+      sprintf(
+        "<span style='display:inline-block;width:0.9em;height:0.9em;border-radius:50%%;margin-right:.4em;background:%s;'></span>%s",
+        hex, hex
+      )
+    }
+    labels <- vapply(ds_vals, label_html, "")
+
+    tagList(
+      fluidRow(
+        column(
+          6,
+          shinyWidgets::pickerInput(
+            inputId = "pick_ds_A", label = "Dataset A color",
+            choices = ds_vals, selected = "#1F77B4",
+            options = list(`live-search` = FALSE),
+            choicesOpt = list(content = as.list(labels))
+          ),
+          conditionalPanel(
+            "input.pick_ds_A == 'custom'",
+            textInput("col_ds_A", NULL, value = "#1F77B4", width = "100%", placeholder = "#RRGGBB")
+          )
+        ),
+        column(
+          6,
+          shinyWidgets::pickerInput(
+            inputId = "pick_ds_B", label = "Dataset B color",
+            choices = ds_vals, selected = "#FF7F0E",
+            options = list(`live-search` = FALSE),
+            choicesOpt = list(content = as.list(labels))
+          ),
+          conditionalPanel(
+            "input.pick_ds_B == 'custom'",
+            textInput("col_ds_B", NULL, value = "#FF7F0E", width = "100%", placeholder = "#RRGGBB")
+          )
+        )
+      ),
+      tags$style(HTML("input.bad-hex { border-color:#dc3545!important; box-shadow:none!important; }"))
+    )
+  })
+
+
+  # Optional: live hex validation (re-uses your markBadHex handler)
+  observe({
+    if (!is.null(input$col_ds_A))
+      session$sendCustomMessage("markBadHex", list(id = "col_ds_A", bad = !.valid_hex(input$col_ds_A)))
+    if (!is.null(input$col_ds_B))
+      session$sendCustomMessage("markBadHex", list(id = "col_ds_B", bad = !.valid_hex(input$col_ds_B)))
+  })
+
+  # Final dataset color reactive (names MUST match df_compare_long()$source values "A"/"B")
+  ds_cols <- reactive({
+    a <- if (identical(input$pick_ds_A, "custom")) input$col_ds_A else input$pick_ds_A
+    b <- if (identical(input$pick_ds_B, "custom")) input$col_ds_B else input$pick_ds_B
+    a <- if (.valid_hex(a)) toupper(a) else "#1F77B4"
+    b <- if (.valid_hex(b)) toupper(b) else "#FF7F0E"
+    c(A = a, B = b)
+  })
+
+  ####
 
   #time helper
   .parse_hhmm <- function(x) {
@@ -1096,16 +1246,7 @@ server <- function(input, output, session) {
 
 
   #PRM----
-  #PRM
-  # --- init reactive stores early (so we can use rv immediately) ---
-  rv <- reactiveValues(
-    df = NULL,
-    df_before_prm = NULL,
-    prm_active = FALSE,
-    prm_summary = NULL,
-    prm_mask = NULL,
-    prm_include = NULL   # <- add this
-  )
+
 
   last_sel <- reactiveValues(x = NULL, y = NULL)
 
@@ -1241,8 +1382,10 @@ server <- function(input, output, session) {
   rows_for_time <- function(df) {
     vars <- vars_to_edit()
     base <- !is.na(df$TIMESTAMP_START)
-    if (!length(vars)) return(base)                       # no overlay → whole timeline
-    any_non_na <- Reduce(`|`, lapply(vars, function(v) isTRUE(!is.na(df[[v]]))))
+    if (!length(vars)) return(base)
+    # no overlay → whole timeline
+    any_non_na <- Reduce(`|`, lapply(vars, function(v) !is.na(df[[v]])))  # vectorized per row
+    #any_non_na <- Reduce(`|`, lapply(vars, function(v) isTRUE(!is.na(df[[v]]))))
     #any_non_na <- Reduce(`|`, lapply(vars, function(v) !is.na(df[[v]])))
     base & any_non_na
   }
@@ -1649,13 +1792,6 @@ server <- function(input, output, session) {
     )
   })
 
-  # # toggle a 'dark-mode' class on <body>
-  # observe({
-  #   addClass  <- if (isTRUE(input$dark_mode)) "dark-mode" else ""
-  #   removeClass <- if (isTRUE(input$dark_mode)) "" else "dark-mode"
-  #   #session$sendCustomMessage("toggleBodyClass", list(add=addClass, remove=removeClass))
-  # })
-
   #overlay
   observe({
     req(rv$df)
@@ -1708,7 +1844,6 @@ server <- function(input, output, session) {
 
   # PRM family choices present in the data
   # PRM variable choices present in the uploaded data
-  # Put this somewhere in server() AFTER rv$df exists:
   observe({
     req(rv$df)
     present <- tryCatch({
@@ -1830,21 +1965,6 @@ server <- function(input, output, session) {
                        type="message", duration=2)
     }
   })
-
-  # Show PRM summary table in a modal
-  # output$prm_summary_tbl <- renderTable({
-  #   s <- rv$prm_summary
-  #   req(s)
-  #   rules <- get_rules()
-  #   if (!is.null(rules)) {
-  #     u_map <- setNames(rules$units, rules$variable)
-  #     s$units <- unname(u_map[s$family])
-  #   } else {
-  #     s$units <- NA_character_
-  #   }
-  #   s$pct_replaced <- round(s$pct_replaced, 1)
-  #   s[, c("column","family","units","min","max","n_replaced","pct_replaced")]
-  # })
 
   observeEvent(input$apply_prm_btn, {
     req(rv$df)
@@ -1973,7 +2093,6 @@ server <- function(input, output, session) {
     updateSelectInput(session, "rng_var", choices = y_choices,
                       selected = if (!is.null(sel_y) && sel_y %in% y_choices) sel_y else y_choices[1])
 
-    # Initialize/refresh the time slider from data
     # Initialize/refresh the time slider from data
     rng  <- safe_posix_range(df$TIMESTAMP_START)
     if (is.null(rng)) {
@@ -2355,6 +2474,12 @@ server <- function(input, output, session) {
       if (identical(input$compare_style, "varcolor")) {
         # color by variable; linetype/marker symbol by dataset
         cols <- setNames(pal_overlay(length(vars_plot)), vars_plot)
+
+        # allow per-variable overrides
+        for (v in names(cols)) {
+          if (!is.null(var_colors[[v]])) cols[[v]] <- var_colors[[v]]
+        }
+
         for (v in vars_plot) {
           for (src in c("A","B")) {
             dds <- dd[dd$variable == v & dd$source == src, , drop = FALSE]
@@ -2401,7 +2526,8 @@ server <- function(input, output, session) {
           }
         }
       } else { # compare_style == "dscolor": color by dataset; facet by variable (simple faux-facet by legend groups)
-        cols <- c(A = "#1f77b4", B = "#ff7f0e")
+        cols <- c(A = "#fe4a49", B = "#009fb7") # "#1f77b4", B = "#ff7f0e")
+
         for (src in c("A","B")) {
           dds <- dd[dd$source == src, , drop = FALSE]
           if (!nrow(dds)) next
@@ -2433,6 +2559,21 @@ server <- function(input, output, session) {
               )
             )
           }
+
+          # after add_lines / add_markers for (v, src):
+          if (isTRUE(input$show_smooth)) {
+            p <- add_smoother_layer(
+              p, dds,
+              xcol = if (identical(input$xvar, "TIMESTAMP_START")) "TIMESTAMP_START" else input$xvar,
+              ycol = "value",
+              col_hex     = if (identical(input$compare_style, "varcolor")) cols[[v]] else cols[[src]],
+              name_prefix = paste(v, labsrc[[src]]),
+              lwd         = input$smooth_lwd   %||% 3,
+              line_alpha  = input$smooth_alpha %||% 0.6,
+              show_ci     = isTRUE(input$smooth_show_ci)
+            )
+          }
+          #####
         }
       }
 
@@ -2473,6 +2614,12 @@ server <- function(input, output, session) {
       cmap    <- setNames(pal_overlay(length(all_num)), all_num)
       # AFTER (only for vars we’re plotting)
       cols  <- setNames(pal_overlay(length(vars_plot)), vars_plot)
+
+      # allow per-variable overrides (applies to both A and B)
+      for (v in names(cols)) {
+        if (!is.null(var_colors[[v]])) cols[[v]] <- var_colors[[v]]
+      }
+
       fcols <- flag_cols_for(vars_plot, cols, flag_scheme())
 
       s  <- input$overlay_size  %||% 6
