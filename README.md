@@ -1,4 +1,4 @@
-# fluxtools v0.6.0
+# fluxtools v0.7.0
 
 Interactive **Shiny** application for exploration and QA/QC of eddy covariance data.  
 Streamlines post-processing of eddy covariance datasets (e.g., after EddyPro) to detect and remove outliers, enforce physical ranges, and generate reproducible R code for AmeriFlux submissions.
@@ -7,7 +7,7 @@ Streamlines post-processing of eddy covariance datasets (e.g., after EddyPro) to
 
 If you use **fluxtools** in your workflow, please cite:
 
-> Key, K. (2025). *fluxtools* (version 0.6.0) [Computer software]. Zenodo.  
+> Key, K. (2025). *fluxtools* (version 0.7.0) [Computer software]. Zenodo.  
 > https://doi.org/10.5281/zenodo.15597159
 
 ---
@@ -41,6 +41,19 @@ If you use **fluxtools** in your workflow, please cite:
 
 - **Multi-year support**  
   Upload up to ~1GB CSV (all years by default, or select one/more years)
+  
+  - **Time subset support**  
+  Subset data view based on year(s), month(s), day(s), or time of day
+  
+  - **Compare two datasets (A/B)**  
+  Upload Dataset B, choose labels/colors, and compare variables side by side (with optional smoothers and bottom legend)
+
+- **Overlay multiple variables**  
+  Plot several Y variables together with color palettes or custom overrides
+
+- **Add smoothed line(s)**  
+  LOESS smoother with optional 95% CI; toggle “Only smoothed line(s)” to hide base traces
+
 
 - **±σ outlier highlighting**  
   Slider marks points beyond *n* standard deviations from a linear fit; click **Select ±σ outliers** to add them
@@ -87,9 +100,9 @@ run_fluxtools()
 
 ## Data Requirements
 #data-requirements
-- Input: AmeriFlux BASE (or Fluxnet) CSV
+- Input: AmeriFlux BASE (or FLUXNET-style) CSV
 - Must include TIMESTAMP_START (e.g., YYYYMMDDHHMM for 30-min or hourly data)
-- Missing values like -9999 are treated as NA
+- Typical missing values such as `-9999`, `-9999.0`, `-9999.00`, `-9999.000`, `NaN`, and empty strings are treated as `NA`
 
 
 ## How It Works
@@ -102,10 +115,10 @@ run_fluxtools()
 
 **Interactive QC & Selection** 
 #interactive-qc--selection
-- Box or lasso to select points
-- Click Flag Data to add selected points to the accumulated removal set
-- Click Unflag Data or Clear Selection to remove from the current set
-- Click Apply removals to set Y-values to NA_real_ (not reversible except through Reload original data)
+- Box/lasso select points in the plot
+- Click **Flag Data** to stage selections; **Unflag Data** or **Clear Selection** to remove
+- Click **Apply removals** to set Y-values to `NA_real_`
+- Use **Reload original data** to revert to the initial upload
 
 **Outlier Detection** 
 #outlier-detection
@@ -125,15 +138,37 @@ run_fluxtools()
 - Flag values outside range to add out-of-bounds points to the accumulated set
 - Complements PRM by allowing site- or project-specific thresholds
 
-**Physical Range Module (PRM)**
-#physical-range-module-prm'
-- **Available in the app or through fluxtools directly in R**
-- Applies canonical physical bounds to variables (e.g., SWC, P, TA, CO2) using name-family matching (e.g., ^SWC($|_).)
--   Example: the "SWC" *family* refers to all variables starting with SWC (e.g., SWC_1_1_1, SWC_2_1_3)
-- Out-of-range values are set to NA and summarized with counts and percentages replaced
-- Apply to all variables or limit to selected families
-- Undo PRM reverts only the last PRM operation.
+**Compare two datasets**
+- Enable **Compare two datasets** and upload **Dataset B**
+- Choose labels and colors per dataset
+- Plot the same variables from A and B; legend appears at the bottom (horizontal)
+- Works with Scatter or Line; optional transparent points on top of lines enable lasso
+- **Smoother** can be added per (variable, dataset); “Only smoothed line(s)” hides base points/lines and shows just the LOESS curves (with optional 95% CI)
 
+**Plot multiple variables**
+- Enable **Plot multiple variables** to select several Y variables from the same dataset
+- Color palette is applied automatically; you can override per-variable colors if desired
+- Flags (rings) can match variable color (darker/lighter) or use classic yellow
+
+**Add smoothed line**
+- Toggle **Add smoothed line**
+- Method: LOESS with configurable span; optional 95% CI band
+- **Only smoothed line(s)** hides base markers/lines and keeps the legend so variables/datasets remain selectable
+- Legend is positioned at the bottom (horizontal)
+
+**Physical Range Module (PRM)**
+#physical-range-module-prm
+- **Available in the app or through fluxtools directly in R**
+- Applies physical bounds to variables (e.g., SWC, P, TA, CO2) using name-family matching (e.g., ^SWC($|_).)
+-   Example: the "SWC" *family* refers to all variables starting with SWC (e.g., SWC_1_1_1, SWC_2_1_3)
+- Out-of-range values → `NA`; QC columns are ignored by default
+- Apply to all families detected in your data, or select a subset in the UI
+- **Undo PRM** reverts only PRM-applied changes (later user edits are preserved)
+- In exports, PRM produces:
+  - `prm_summary.csv` (bounds and counts)
+  - `prm_removed_values.csv` (cell-level audit)
+  - `manual_prm_removed.R` (replay script)
+  
 Example:
 ```r
 # View PRM rule table
@@ -177,7 +212,7 @@ vignette("introduction", package = "fluxtools")
 
 ## Citation
 If you use fluxtools in publications, please cite:
-> Key, K. (2025). fluxtools (version 0.6.0) [Computer software]. Zenodo.
+> Key, K. (2025). fluxtools (version 0.7.0) [Computer software]. Zenodo.
 > https://doi.org/10.5281/zenodo.15597159
 
 

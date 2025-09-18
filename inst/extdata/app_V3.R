@@ -1,13 +1,6 @@
-# - [ ]  add smoothed line option (with options for how smoothed with lm)
-# - [ ]  how to assign colors for each variable without being a huge pain
-# - [ ]  two data comparison option?
-
-#time subset!
-##TESTING THIS
-# - [ ]  time filter (allow for night vs day); (Bonus: If time picked is between 6am and 8pm, have a sun icon pop up on the top left of the plot, or a moon during 8pm to 6am)
-# - [X]  Select months (similar to select years) or specific day (subset plots to these timeframes)
-
-#time default should be all hours!
+#how to make left panel collapsible but have the flag options still show up?
+#how to add smoothed line option (with options for how smoothed)
+#how to assign colors for each variable without being a huge pain
 
 library(shiny)
 library(plotly)
@@ -19,7 +12,7 @@ library(readr)
 # Allow larger uploads (here: up to 1gb)
 options(shiny.maxRequestSize = 1024 * 1024 * 1024) #1gb
 
-# 1) Theme ──────────────────────────────────────────────────----
+## ── 1) Theme ───────────────────────────────────────────────────────
 light_theme <- bs_theme(
   bootswatch = "cerulean",
   base_font_size  = "14px",    # ← bump this up (default is 14px)
@@ -37,61 +30,12 @@ dark_theme <- bs_theme(
   input_fg       = "#EEE"#,
 )
 
-#UI----
-
-# UI helpers (put near top of UI)
-ui_switch_default <- function(id, label, value = FALSE) {
-  tagList(
-    tags$label(`for` = id, class = "form-label fw-medium", label),
-    shinyWidgets::switchInput(
-      inputId  = id,
-      value    = value,
-      onLabel  = "Custom",        # when ON
-      offLabel = "Use default",   # when OFF
-      size     = "mini",
-      handleWidth = 18, onColor = "primary"
-    )
-  )
-}
-
 ui <- fluidPage(
   style = "height:100vh; overflow:hidden;",
   theme = light_theme,
 
-
-
   tags$head(
     tags$style(HTML("
-
-      # CSS: slim down switches a hair (keep it subtle)
-  .bootstrap-switch { transform: scale(.92); }
-  .bootstrap-switch .bootstrap-switch-handle-on,
-  .bootstrap-switch .bootstrap-switch-handle-off,
-  .bootstrap-switch .bootstrap-switch-label { padding: 2px 6px; font-size: .8rem; }
-
-          /* button-like accordion headers */
-      .accordion-button {
-        border: 1px solid var(--bs-border-color);
-        border-radius: .5rem !important;
-        background: var(--bs-body-bg);
-        box-shadow: 0 .125rem .25rem rgba(0,0,0,.05);
-      }
-      .accordion-button:not(.collapsed){
-        background: var(--bs-primary-bg-subtle);
-        border-color: var(--bs-primary-border-subtle);
-      }
-
-
-        /* smaller + slightly desaturated icons everywhere */
-    i.fa, i.fas, i.far, i.fal, i.fab, .bi {
-      font-size: 0.9em;
-      filter: grayscale(60%);
-      opacity: .85;
-    }
-    /* optional: shrink icons specifically in accordion headers */
-    .accordion-button i { font-size: 0.95em; }
-
-
   /* shrink tables inside modals + PRM help */
   #help_prm_table, #prm_summary_tbl, .modal-body table {
     font-size: 0.8rem;
@@ -235,7 +179,6 @@ document.addEventListener('keydown', function(e){
 '))
 ),
 
-#Titles and things----
   titlePanel(
     div(
       "fluxtools: Interactive QA/QC with Code Generator",
@@ -253,159 +196,53 @@ document.addEventListener('keydown', function(e){
 
       tags$h5("Data upload and selection"),
       fileInput("csv_file", "Upload Ameriflux‐style or Fluxnet .csv:", accept = ".csv"),
-      hr(),
-      #time
-      # --- Time subset (collapsible) ---
-      tags$details(
-        class = "time-subset",
-        open = FALSE,  # start collapsed (set TRUE if you want it open by default)
-        tags$summary(tags$span(class = "h5 fw-semibold mb-0", "Time subset (optional)")),
 
-
-
-        # Year(s)
-        tagAppendAttributes(
-          selectizeInput(
-            "year_sel", "Select Year(s):",
-            choices = NULL, multiple = TRUE,
-            options = list(
-              placeholder = "– upload to load year(s) –",
-              plugins = list("remove_button")
-            ),
-            width = "100%"
-          ),
-          'data-bs-toggle' = "tooltip",
-          'data-bs-title'  = "Filter to one or more years"
-        ),
-
-        # Month(s)
-        shinyWidgets::pickerInput(
-          inputId = "month_sel",
-          label   = "Select month(s):",
-          choices = stats::setNames(1:12, month.abb),
-          multiple = TRUE,
+      tagAppendAttributes(
+        selectizeInput(
+          "year_sel", "Select Year(s):",
+          choices = NULL, multiple = TRUE,
           options = list(
-            `actions-box` = TRUE,
-            `selected-text-format` = "count > 3",
-            `none-selected-text`   = "All months"
-          )
+            placeholder = "– upload to load year(s) –",
+            plugins = list("remove_button")
+          ),
+          width = "100%"
         ),
-
-        # Day(s)
-        shinyWidgets::airDatepickerInput(
-          inputId    = "day_sel",
-          label      = "Specific day(s):",
-          multiple   = TRUE,
-          autoClose  = TRUE,
-          clearButton = TRUE,
-          placeholder = "Pick one or more days"
-        ),
-
-
-      # Hour-of-day subsetting (local clock)
-      shinyWidgets::sliderTextInput(
-        inputId  = "hod_rng",
-        label    = "Hours of day (local):",
-        choices  = sprintf("%02d:00", 0:24),
-        selected = c("00:00", "24:00"),   # ← full day by default
-        grid     = TRUE,
-        dragRange = TRUE
+        'data-bs-toggle' = "tooltip",
+        'data-bs-title' = "Filter to one or more years"
       ),
-      checkboxInput("hod_invert", "Use outside these hours (night)", FALSE),
 
+     # --- UTC select with tooltip on the label ---
+     tags$details(
+       # default is closed; omit or set open = FALSE
+       # open = FALSE,
+       tags$summary(HTML('<i class="fa fa-globe"></i> Set Timezone')),
 
+       # UTC select with tooltipbed label
+       div(class = "mb-2 mt-2",
+           tags$label(
+             id    = "data_offset_label",
+             `for` = "data_offset",
+             "View TIMESTAMP_START in:",
+             'data-bs-toggle' = "tooltip",
+             title = "Fixed timestamp; no DST"
+           ),
+           selectInput(
+             "data_offset", label = NULL,
+             choices  = sprintf("UTC%+d", -12:14),
+             selected = "UTC+0", width = "100%"
+           ),
+           tags$small(class = "form-text text-muted fst-italic",
+                      "This only changes how times are shown in the app; exports keep original strings.")
+       ),
 
-
-
-
-      tags$small(class = "text-muted",
-                 "*Time filters are applied in the chosen viewing timezone")
-      ),
+       # Nest the parsing details inside the same wrapper
+       tags$details(
+         class = "mt-1",
+         tags$summary("Show timestamp parsing details"),
+         tags$pre(style = "margin-top:.5rem;", textOutput("tz_check"))
+       )
+     ),
       hr(),
-
-      # hidden timezone picker so server logic still has an input
-      div(
-        style = "display:none;",
-        selectInput(
-          "data_offset", label = NULL,
-          choices  = sprintf("UTC%+d", -12:14),
-          selected = "UTC+0", width = "100%"
-        )
-      ),
-
-
-     #  tags$h5("Time subset (optional)"),
-     #  tagAppendAttributes(
-     #    selectizeInput(
-     #      "year_sel", "Select Year(s):",
-     #      choices = NULL, multiple = TRUE,
-     #      options = list(
-     #        placeholder = "– upload to load year(s) –",
-     #        plugins = list("remove_button")
-     #      ),
-     #      width = "100%"
-     #    ),
-     #    'data-bs-toggle' = "tooltip",
-     #    'data-bs-title' = "Filter to one or more years"
-     #  ),
-     #
-     #  # --- Month / Day subsetting ---
-     #  shinyWidgets::pickerInput(
-     #    inputId = "month_sel",
-     #    label   = "Select month(s):",
-     #    choices = stats::setNames(1:12, month.abb),
-     #    multiple = TRUE,
-     #    options = list(
-     #      `actions-box` = TRUE,
-     #      `selected-text-format` = "count > 3",
-     #      `none-selected-text` = "All months"
-     #    )
-     #  ),
-     #  shinyWidgets::airDatepickerInput(
-     #    inputId    = "day_sel",
-     #    label      = "Specific day(s):",
-     #    multiple   = TRUE,
-     #    autoClose  = TRUE,
-     #    clearButton = TRUE,
-     #    placeholder = "Pick one or more days"
-     #  ),
-     #  tags$small(class = "text-muted",
-     #             "*Time filters are applied in the chosen viewing timezone"
-     #  ),
-     #  hr(),
-     #
-     # # --- UTC select with tooltip on the label ---
-     # tags$details(
-     #   # default is closed; omit or set open = FALSE
-     #   # open = FALSE,
-     #   tags$summary(HTML('<i class="fa fa-globe"></i> Set Timezone')),
-     #
-     #   # UTC select with tooltipbed label
-     #   div(class = "mb-2 mt-2",
-     #       tags$label(
-     #         id    = "data_offset_label",
-     #         `for` = "data_offset",
-     #         "View TIMESTAMP_START in:",
-     #         'data-bs-toggle' = "tooltip",
-     #         title = "Fixed timestamp; no DST"
-     #       ),
-     #       selectInput(
-     #         "data_offset", label = NULL,
-     #         choices  = sprintf("UTC%+d", -12:14),
-     #         selected = "UTC+0", width = "100%"
-     #       ),
-     #       tags$small(class = "form-text text-muted fst-italic",
-     #                  "This only changes how times are shown in the app; exports keep original strings.")
-     #   ),
-     #
-     #   # Nest the parsing details inside the same wrapper
-     #   tags$details(
-     #     class = "mt-1",
-     #     tags$summary("Show timestamp parsing details"),
-     #     tags$pre(style = "margin-top:.5rem;", textOutput("tz_check"))
-     #   )
-     # ),
-     # hr(),
 
 
       tags$h5("Plot selection"),
@@ -463,85 +300,54 @@ document.addEventListener('keydown', function(e){
     ),
 
     # Advanced: flag style & markers (applies to overlay and single-Y)
-    #Change plot type
-    # Advanced: flag style & markers (applies to overlay and single-Y)
-    bslib::accordion_panel(
-      title = tagList(icon("sliders-h"), "Advanced"),
-      value = "plot_type",
+    tags$details(
+      id = "adv_flags",
+      tags$summary(HTML('<i class="fa fa-sliders-h"></i> Advanced (flag style & markers)')),
 
-      # --- Plot type
-      ui_switch_default("adv_plot_on",  "Smooth/line options", TRUE),
+      #color selection
+      # Y color (single-Y only)
+      tags$small(class="text-muted",
+                 "y-axis color selection applies only to the single-variable view. ",
+                 "Plotting multiple variables use color palettes"),
+
       conditionalPanel(
-        "input.adv_plot_on",
-        radioButtons(
-          "plot_style", NULL, inline = TRUE,
-          choiceNames  = c("Scatterplot", "Smoothed"),
-          choiceValues = c("scatter", "smooth")
-        ),
-
-        # show only when 'Smoothed' is selected
-        conditionalPanel(
-          "input.plot_style == 'smooth'",
-          selectInput("smooth_method", "Smoother", c("lm","loess"), selected = "lm"),
-          conditionalPanel(
-            "input.smooth_method == 'loess'",
-            sliderInput("smooth_span", "Loess span", min=.1, max=1, step=.1, value=.5)
-          ),
-          checkboxInput("keep_points", "Keep points", TRUE),
-
-          # line-specific controls only for smoothed
-          sliderInput("reg_width", "Smooth line width", min = 1, max = 10, value = 4, step = 1),
-          sliderInput("reg_alpha", "Smooth line opacity", min = 0.1, max = 1, value = 0.9, step = 0.05),
-          conditionalPanel(
-            "input.smooth_method == 'lm'",
-            selectInput("lm_degree", "LM polynomial degree", choices = 1:3, selected = 1)
-          )
-        ),
-
-        # point & line aesthetics for SCATTER ONLY (or when keep_points is TRUE)
-        conditionalPanel(
-          "input.plot_style == 'scatter' || input.keep_points",
-          sliderInput("pt_size", "Point size", min=1, max=14, value=6, step=1)
-        ),
-
-        # (optional) line width for non-smoothed lines; hide it unless you have a real line layer
-        # sliderInput("ln_width", "Line width", min=1, max=8, value=3, step=1)
-      ),
-
-      tags$hr(),
-
-      # --- Y color (single-Y)
-      ui_switch_default("adv_color_on", "Custom Y color", TRUE),
-      conditionalPanel(
-        "input.adv_color_on && !input.overlay_mode",
+        "!input.overlay_mode",
         selectInput(
-          "y_color_style", "Y color",
-          c("Theme accent (default)"="default","Black"="black","Custom"="custom"),
-          selected="default", width="100%"
+          "y_color_style", "y-axis color (single view)",
+          choices = c(
+            "Theme accent (default)" = "default",
+            "Black"        = "black",
+            "Custom"                = "custom"
+          ),
+          selected = "default", width = "100%"
         ),
         conditionalPanel(
           "input.y_color_style == 'custom'",
-          textInput("y_color_custom", "Custom hex", value="#1F449C", width="100%")
+          textInput("y_color_custom", "Custom hex", value = "#1F449C", width = "100%")
         )
       ),
 
-      tags$hr(),
 
-      # --- Flags & markers
-      ui_switch_default("adv_marker_on", "Markers & flags", TRUE),
-      conditionalPanel(
-        "input.adv_marker_on",
-        selectInput(
-          "flag_color_scheme", "Flag color style",
-          choices = c("Yellow (classic)"="yellow","Match variable (darker)"="match_dark","Match variable (lighter)"="match_light"),
-          selected="yellow", width="100%"
+      # universal: used in overlay and single-Y
+      selectInput(
+        "flag_color_scheme", "Flag color style",
+        choices = c(
+          "Yellow (classic)"              = "yellow",
+          "Match variable (darker)"       = "match_dark",
+          "Match variable (lighter)"      = "match_light"#,
+          #"Accessible pair (color-blind)" = "accessible"
         ),
-        checkboxInput("overlay_hollow", "Use hollow circles", TRUE),
-        sliderInput("overlay_size", "Base point size", min=1, max=14, value=6, step=1),
-        sliderInput("flag_size", "Flag ring size", min=1, max=14, value=8, step=1),
-        checkboxInput("show_pair_legend", "Show color key", TRUE),
-        uiOutput("pair_legend")
-      )
+        selected = "yellow", width = "100%"
+      ),
+
+      # small copy tweak so it makes sense in single-Y too
+      checkboxInput("show_pair_legend", "Show color key", TRUE),
+      uiOutput("pair_legend"),
+      checkboxInput("overlay_hollow", "Use hollow circles", TRUE),
+      sliderInput("overlay_size",  "Point size",        min = 1,  max = 14, value = 6,  step = 1),
+      sliderInput("flag_size",     "Flag point size",   min = 1,  max = 14, value = 8,  step = 1),
+
+
     ),
 
 
@@ -600,8 +406,6 @@ document.addEventListener('keydown', function(e){
       bslib::accordion(
         id = "qa_sections",
         open = FALSE,
-
-
 
 #flag by range
         bslib::accordion_panel(
@@ -691,7 +495,6 @@ document.addEventListener('keydown', function(e){
           )
         ),
 
-#PRM----
 #prm module
 bslib::accordion_panel(
   title = tags$span(
@@ -751,7 +554,6 @@ bslib::accordion_panel(
 
 ),
 
-#code generation----
 #code generation
         bslib::accordion_panel(
           title = tagList(icon("code"), "Code generation"),
@@ -869,64 +671,11 @@ bslib::accordion_panel(
   )
 )
 
-#server----
+
 server <- function(input, output, session) {
 
   #NA strings for r script output
   NA_STRINGS <- c("NA","NaN","","-9999","-9999.0","-9999.00","-9999.000")
-
-  #time helper
-  .parse_hhmm <- function(x) {
-    if (is.null(x) || length(x) != 2) return(c(0, 24))
-    as.numeric(sub(":.*","", x)) + as.numeric(sub(".*:","", x))/60
-  }
-  .hod_in_range <- function(h, start, end) {
-    if (is.na(start) || is.na(end) || start == end) return(rep(TRUE, length(h)))   # all day
-    if (start < end) (h >= start & h < end) else (h >= start | h < end)            # wrap-aware
-  }
-  # Returns ☀️, 🌙, or "☀️ 🌙" depending on selected hours (with invert)
-  .current_phase_icons <- function(hh_vec, invert = FALSE) {
-    hh <- .parse_hhmm(hh_vec)
-    hrs <- seq(0, 24, by = 0.5)
-    sel <- .hod_in_range(hrs, hh[1], hh[2])
-    if (invert) sel <- !sel
-
-    day    <- .hod_in_range(hrs, 6, 20)   # 06:00–20:00
-    day_on <- any(sel & day)
-    nite_on<- any(sel & !day)
-
-    paste(c(if (day_on) "☀️", if (nite_on) "🌙"), collapse = " ")
-  }
-
-  phase_badge <- reactive({
-    .current_phase_icons(input$hod_rng, isTRUE(input$hod_invert))
-  })
-
-  add_phase_badge <- function(p) {
-    plotly::add_annotations(
-      p,
-      xref = "paper", yref = "paper",
-      x = 0, y = 1, xanchor = "left", yanchor = "top",
-      text = phase_badge(),
-      showarrow = FALSE,
-      font = list(size = 22),
-      borderpad = 2
-    )
-  }
-
-  x_title_with_phase <- function() {
-    badge <- phase_badge()              # already defined
-    if (identical(input$xvar, "TIMESTAMP_START")) {
-      sprintf("%s  TIMESTAMP_START (UTC%+d)", badge, data_off_hr())
-    } else {
-      sprintf("%s  %s", badge, input$xvar)
-    }
-  }
-
-
-
-
-
 
   # ---- visual constants (no sliders needed) ----
   POINT_ALPHA      <- 0.70   # base points
@@ -1006,7 +755,7 @@ server <- function(input, output, session) {
   })
 
 
-#PRM----
+
   #PRM
   # --- init reactive stores early (so we can use rv immediately) ---
   rv <- reactiveValues(
@@ -1138,32 +887,6 @@ server <- function(input, output, session) {
     paste0("c(\n  ", paste(inside, collapse = ",\n  "), "\n)")
   }
 
-  #time helper
-  # Helper: safe range for POSIXct; returns NULL if no finite values
-  safe_posix_range <- function(x) {
-    if (is.null(x)) return(NULL)
-    x_ok <- x[is.finite(as.numeric(x))]
-    if (!length(x_ok)) return(NULL)
-    range(x_ok)
-  }
-
-  #time subset helper for hours
-  # parse "HH:MM" -> fractional hour
-  .parse_hhmm <- function(x) {
-    if (is.null(x) || length(x) != 2) return(c(0, 24))
-    as.numeric(sub(":.*","", x)) + as.numeric(sub(".*:","", x))/60
-  }
-
-
-
-  # membership for wrap-around hour ranges
-  .hod_in_range <- function(h, start, end) {
-    if (is.na(start) || is.na(end) || start == end) return(rep(TRUE, length(h)))   # all day
-    if (start < end) (h >= start & h < end) else (h >= start | h < end)
-  }
-
-
-
 
   # --- color helpers ---
   tint_hex <- function(hex, amt = 0.45) {
@@ -1266,7 +989,6 @@ server <- function(input, output, session) {
   # rng_var -> yvar
   is_syncing <- reactiveVal(FALSE)
 
-  #observeEvents----
   observeEvent(input$rng_var, {
     if (isTRUE(input$rng_link_y) && !is_syncing()) {
       is_syncing(TRUE)
@@ -1368,19 +1090,11 @@ server <- function(input, output, session) {
   # --- helpers ---
   parse_utc_hours <- function(lbl) as.integer(sub("UTC([+-]?\\d+).*", "\\1", lbl))
 
-  data_off_hr <- reactive({
-    val <- input$data_offset
-    if (is.null(val) || !nzchar(val)) return(0L)   # default UTC+0 if control absent
-    parse_utc_hours(val)
-  })
-
+  data_off_hr <- reactive({ parse_utc_hours(req(input$data_offset)) })
   data_tz <- reactive({
     off <- data_off_hr()
-    if (off == 0) "UTC" else paste0("Etc/GMT", if (off < 0) "+", "-")[1] %||% ""  # sign flip handled below
-    if (off == 0) "UTC" else paste0("Etc/GMT", if (off < 0) "+" else "-", abs(off))
+    if (off == 0) "UTC" else paste0("Etc/GMT", if (off < 0) "+" else "-", abs(off))  # POSIX sign flip
   })
-
-
 
   #Date selection helper
   #to_view_time   <- function(x) as.POSIXct(as.numeric(x) + data_off_hr()*3600, origin="1970-01-01", tz = data_tz())
@@ -1435,7 +1149,6 @@ server <- function(input, output, session) {
     showNotification("Code copied ✅", type="message", duration = 1)
   })
 
-  #color overlay----
   #color overlay
   # color overlay (no extra packages)
   pal_overlay <- function(n, which = input$overlay_palette) {
@@ -1480,7 +1193,7 @@ server <- function(input, output, session) {
                origin = "1970-01-01", tz = "UTC")
 
 
-  #PRM Server----
+  #PRM Server
   observeEvent(input$apply_prm_subset, {
     req(rv$df)
 
@@ -1676,84 +1389,53 @@ server <- function(input, output, session) {
     )
   })
 
-
+  # 3) Reactive: df_by_year() filters rv$df by whichever years the user picked.
   df_by_year <- reactive({
     req(rv$df, input$year_sel)
-    df <- rv$df
-
-    # Year filter (unchanged)
-    if (!identical(input$year_sel, "All")) {
-      yrs <- setdiff(input$year_sel, "All")
-      df  <- df[format(df$TIMESTAMP_START, "%Y") %in% yrs, , drop = FALSE]
-    }
-
-    # Local time columns
-    off_hours <- data_off_hr()
-    df$local_ts    <- df$TIMESTAMP_START + off_hours * 3600
-    df$local_date  <- as.Date(df$local_ts, tz = data_tz())
-    df$local_month <- as.integer(format(df$local_ts, "%m"))
-    df$local_hour  <- as.numeric(format(df$local_ts, "%H")) +
-      as.numeric(format(df$local_ts, "%M"))/60
-
-    # Month filter (optional)
-    if (!is.null(input$month_sel) && length(input$month_sel) > 0) {
-      df <- df[df$local_month %in% as.integer(input$month_sel), , drop = FALSE]
-    }
-
-    # Specific day(s) filter (optional)
-    if (!is.null(input$day_sel) && length(input$day_sel) > 0) {
-      sel_dates <- as.Date(input$day_sel)
-      df <- df[df$local_date %in% sel_dates, , drop = FALSE]
-    }
-
-    # Hour-of-day filter (wrap-aware + invert; full-day passes through)
-    if (!is.null(input$hod_rng) && length(input$hod_rng) == 2) {
-      hh <- .parse_hhmm(input$hod_rng)
-      in_rng <- .hod_in_range(df$local_hour, hh[1], hh[2])
-      df <- df[ if (isTRUE(input$hod_invert)) !in_rng else in_rng , , drop = FALSE]
+    # If the user has "All" selected *and* no other year, return the full data:
+    if (identical(input$year_sel, "All")) {
+      return(rv$df)
     }
 
 
+    # Otherwise, drop "All" (if present) and filter by the remaining years:
+    chosen_years <- setdiff(input$year_sel, "All")
 
-    df
+    rv$df %>%
+      filter(format(TIMESTAMP_START, "%Y") %in% chosen_years)
   })
-
-
 
   # replace your current observeEvent(df_by_year(), { ... }) with this:
   observe({
     df <- df_by_year(); req(df)
-
     ts <- df$TIMESTAMP_START[ rows_for_time(df) ]
-    ts <- ts[is.finite(as.numeric(ts))]
+
 
     if (length(ts) >= 2) {
-      step <- infer_cadence_sec(ts)
-      r    <- safe_posix_range(ts)
-      if (is.null(r)) {
-        updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0,1), step = 3600)
-        return()
-      }
+      step <- infer_cadence_sec(ts)       # 1800 or 3600
+      r    <- range(ts)
       r[1] <- align_to_step(r[1], step)
       r[2] <- ceil_to_step(r[2],  step)
       updateSliderInput(session, "time_rng",
                         min = r[1], max = r[2], value = r,
-                        step = step, timeFormat = "%Y-%m-%d\n%H:%M")
+                        step = step, timeFormat = "%Y-%m-%d\n%H:%M"
+      )
     } else {
-      rng_all <- safe_posix_range(df$TIMESTAMP_START)
-      if (is.null(rng_all)) {
-        updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0,1), step = 3600)
-      } else {
+      # fallback: use whole data range if possible, otherwise a tiny dummy range
+      rng_all <- range(df$TIMESTAMP_START, na.rm = TRUE)
+      if (all(is.finite(rng_all))) {
         step_f <- 3600L
         r1 <- align_to_step(rng_all[1], step_f)
         r2 <- ceil_to_step(rng_all[2],  step_f)
         updateSliderInput(session, "time_rng",
                           min = r1, max = r2, value = c(r1, r2),
-                          step = step_f, timeFormat = "%Y-%m-%d\n%H:%M")
+                          step = step_f, timeFormat = "%Y-%m-%d\n%H:%M"
+        )
+      } else {
+        updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0, 1), step = 3600)
       }
     }
   })
-
 
   #  Clear *current* selection in the code box:
   observeEvent(input$clear_sel, {
@@ -1916,38 +1598,7 @@ server <- function(input, output, session) {
                       selected = if (!is.null(sel_y) && sel_y %in% y_choices) sel_y else y_choices[1])
 
     # Initialize/refresh the time slider from data
-    # Initialize/refresh the time slider from data
-    rng  <- safe_posix_range(df$TIMESTAMP_START)
-    if (is.null(rng)) {
-      updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0,1), step = 3600)
-    } else {
-      step <- infer_cadence_sec(df$TIMESTAMP_START)
-      updateSliderInput(session, "time_rng",
-                        min = rng[1], max = rng[2], value = rng,
-                        step = step, timeFormat = "%Y-%m-%d\n%H:%M")
-    }
-
-    # overlay-aware initialization
-    ts_all <- df$TIMESTAMP_START[ rows_for_time(df) ]
-    ts_all <- ts_all[is.finite(as.numeric(ts_all))]
-    if (length(ts_all) >= 2) {
-      step0 <- infer_cadence_sec(ts_all)
-      r0    <- safe_posix_range(ts_all)
-      if (!is.null(r0)) {
-        r0[1] <- align_to_step(r0[1], step0)
-        r0[2] <- ceil_to_step(r0[2],  step0)
-        updateAirDateInput(session, "start_dt", value = to_view_time(r0[1]))
-        updateAirDateInput(session, "end_dt",   value = to_view_time(r0[2]))
-        updateSliderInput(session, "time_rng",
-                          min = r0[1], max = r0[2], value = r0,
-                          step = step0, timeFormat = "%Y-%m-%d\n%H:%M")
-      } else {
-        updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0,1), step = 3600)
-      }
-    } else {
-      updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0,1), step = 3600)
-    }
-
+    rng  <- range(df$TIMESTAMP_START, na.rm = TRUE)
     step <- infer_cadence_sec(df$TIMESTAMP_START)
 
     updateSliderInput(
@@ -2055,7 +1706,7 @@ server <- function(input, output, session) {
       if (isTRUE(input$dark_mode)) dark_theme else light_theme
     )
   })
-#helpModal----
+
   helpModal <- function() {
     shiny::modalDialog(
       title     = "Help: fluxtools QA/QC",
@@ -2268,29 +1919,20 @@ output$qc_plot <- renderPlotly({
       }
     }
 
-#plotly----
+
     p <- p %>% plotly::layout(
       legend = list(itemclick = "toggleothers", itemdoubleclick = "toggle"),
       autosize = TRUE, dragmode = "select", font = list(size = 18),
       margin = list(l = 80, r = 20, b = 80, t = 20),
-      xaxis = list(
-        type = if (identical(input$xvar, "TIMESTAMP_START")) "date" else "-",
-        tickformat = if (identical(input$xvar, "TIMESTAMP_START")) "%b %d, %Y %H:%M" else NULL,
-        title = list(text = x_title_with_phase(), standoff = 10),
-        tickfont = list(size = 12)   # ← smaller tick labels
-      ),
+      xaxis = if (identical(input$xvar, "TIMESTAMP_START")) {
+        list(type = "date", tickformat = "%b %d\n%H:%M",
+             title = sprintf("TIMESTAMP_START (UTC%+d)", data_off_hr()))
+      } else list(title = input$xvar),
       yaxis = list(title = "Overlayed variables")
     )
-    #   xaxis = if (identical(input$xvar, "TIMESTAMP_START")) {
-    #     list(type = "date", tickformat = "%b %d, %Y %H:%M",
-    #          title = sprintf("TIMESTAMP_START (UTC%+d)", data_off_hr()))
-    #   } else list(title = input$xvar),
-    #   yaxis = list(title = "Overlayed variables")
-    # )
     if (isTRUE(input$dark_mode)) {
       p <- p %>% plotly::layout(template = "plotly_dark",
                                 paper_bgcolor = "#2E2E2E", plot_bgcolor  = "#2E2E2E", font = list(color = "white"))
-      p <- add_phase_badge(p)
     }
     return(p)
   }
@@ -2421,16 +2063,6 @@ output$qc_plot <- renderPlotly({
           bordercolor = if (isTRUE(input$dark_mode)) "#EEE" else "black"
         )
 
-      #TIME ICONS!
-      p <- p %>% plotly::add_annotations(
-        xref="paper", yref="paper",
-        x=0.01, y=0.99, xanchor="left", yanchor="top",
-        text = phase_badge(),
-        showarrow = FALSE,
-        font = list(size = 22)
-      )
-
-
       # R² with “accumulated” dropped
       acc_sel <- isolate(sel_keys())
       if (length(acc_sel) > 0) {
@@ -2453,12 +2085,11 @@ output$qc_plot <- renderPlotly({
     dragmode = "select",
     font   = list(size = 18),
     margin = list(l = 80, r = 20, b = 80, t = 20),
-    xaxis = list(
-      type = if (identical(input$xvar, "TIMESTAMP_START")) "date" else "-",
-      tickformat = if (identical(input$xvar, "TIMESTAMP_START")) "%b %d, %Y %H:%M" else NULL,
-      title = list(text = x_title_with_phase(), standoff = 10),
-      tickfont = list(size = 12)     # ← smaller tick labels
-    ),
+    xaxis = if (input$xvar == "TIMESTAMP_START") {
+      list(type = "date",
+           tickformat = "%b %d\n%H:%M",
+           title = sprintf("TIMESTAMP_START (UTC%+d)", data_off_hr()))
+    } else list(title = input$xvar),
     yaxis = list(title = input$yvar)
   )
 })
@@ -2560,7 +2191,7 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
     df
   })
 
-  #UTC helper----
+  #UTC helper
   # put near your other helpers
   # Map offsets to friendlier labels
   pretty_tz_label <- function(h) {
@@ -2638,7 +2269,6 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
   observeEvent(time_rng_debounced(), ignoreInit = TRUE, {
     df <- df_by_year(); req(df)
     pool <- sort(unique(df$TIMESTAMP_START[ rows_for_time(df) ]))
-    pool <- pool[is.finite(as.numeric(pool))]
     if (length(pool) < 2) return()
 
     tr   <- time_rng_debounced()
@@ -2662,7 +2292,7 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
   snap_to_pool <- function(x, pool) pool[ which.min(abs(as.numeric(pool) - as.numeric(x))) ]
 
 #   ──────────────────────────────────────────────────────────────────
-  # DOWNLOAD HANDLER for “Download cleaned CSV”----
+  # DOWNLOAD HANDLER for “Download cleaned CSV”
   # ────────────────────────────────────────────────────────────────────────────
   output$download_data <- downloadHandler(
     filename = function() paste0("fluxtools_", Sys.Date(), ".zip"),
@@ -2958,5 +2588,4 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
   })
 }
 
-#run app----
 shinyApp(ui, server)

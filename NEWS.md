@@ -1,4 +1,12 @@
-# fluxtools 0.1.0 (2025-06-03)
+# fluxtools 0.7.0 (2025-09-18)
+
+# fluxtools 0.7.0
+## What’s New in v0.7.0
+- Compare two datasets (A/B) with custom colors and labels
+- Overlay multiple Y variables with palette or custom colors
+- LOESS smoothing with optional “only smooth” view
+- Bottom legend placement (works with smooth-only mode)
+- Time subset suppot: subset data view based on year(s), month(s), day(s), or time of day
 
 * First CRAN release:  
   - Added Shiny app under inst/app/  

@@ -17,14 +17,17 @@ library(fluxtools)
 
 **fluxtools** is an R package that provides an interactive Shiny‐based QA/QC environment to explore or remove data in the AmeriFlux BASE (or Fluxnet) format. In just a few clicks, you can:
 
-1. Upload eddy covariance data in a .csv format (AmeriFlux standard naming and timestamp conventions)
-2. Visualize any two numeric columns against time (or each other)
-3. Highlight statistical outliers (±σ from a linear fit) and add them to your point-removal R code
-4. Manually select and remove data points via a lasso or box. Selecting these adds to the accumulated removal code
-6. Copy and paste the generated code into your own R script for reproducible QA/QC
-7. Download a “cleaned” CSV with excluded values (using "apply removals") set to `NA` and an R script for reproducibility
+1. Upload eddy covariance data in a .csv format (AmeriFlux standard naming and timestamp conventions; up to ~1 GB)
+2. Visualize any numeric variable against time (default: TIMESTAMP_START) or against another variable
+3. Detect outliers with the ±σ slider (residuals from a simple linear fit) and stage them for removal
+4. Manually flag points using box/lasso selection, time ranges, or custom min/max thresholds
+5. Overlay or compare: Plot multiple Y variables in the same dataset, or upload a second dataset (Dataset B) for side-by-side comparison with Dataset A
+6. Add smoothers (LOESS) with adjustable span and optional 95% CI; optionally show only smoothed line(s)
+7. Apply PRM (Physical Range Module) to automatically replace values outside published physical bounds
+8. Generate reproducible code: fluxtools builds dplyr code that sets flagged values to NA_real_. Copy current or accumulated snippets directly
+9. Download results: export a ZIP with cleaned CSV(s), replay scripts, and (if PRM applied) summary/audit files
 
-This vignette shows you how to install, launch, and use the main Shiny app—`run_flux_qaqc()`—and walks through a typical workflow.
+This vignette shows you how to install, launch, and use the main Shiny app—`run_fluxtools()`—and walks through a typical workflow.
 
 ---
 
@@ -55,13 +58,46 @@ run_fluxtools()
 
  Example workflow
 
-1. **Upload**: Select your AmeriFlux-style CSV (e.g., `US_VT1_HH_202401010000_202501010000.csv`). Files can be up to 1GB (larger file sizes might be harder on the Shiny interface)
+- **Upload**: Select your AmeriFlux-style CSV (e.g., `US_VT1_HH_202401010000_202501010000.csv`). Files can be up to 1GB (larger file sizes might be harder on the Shiny interface)
 
-2. **Choose Year(s)**: By default “all” is selected, but you can subset to specific years
+- **Choose Year(s)**: By default “all” is selected, but you can subset to specific years
 
-3. **Choose variables**: `TIMESTAMP_START` is on the x-axis by default. Change the y-axis to your variable of interest (e.g., `FC_1_1_1`). The generated R code focuses on removing the y-axis variable
+- **Choose variables**: `TIMESTAMP_START` is on the x-axis by default. Change the y-axis to your variable of interest (e.g., `FC_1_1_1`). The generated R code focuses on removing the y-axis variable
 
-4. **Select data**: Use the box or lasso to select points. This populates the “Current” code box with something like:
+- **Compare Two Datasets**
+Upload a second dataset (Dataset B) to compare against your primary upload (Dataset A).
+ - ⚠️ *Note: Flagging and removals only apply to Dataset A*
+ - You can assign custom labels for each dataset, which appear in the legend
+ - Choose custom colors per dataset
+ - All advanced options (smoothers, lines vs. points, opacity, etc.) work in comparison mode, except global themes and single-variable color overrides (which apply to Dataset A only)
+
+- **Plot Multiple Variables (Overlay)**
+Enable Plot multiple variables to overlay several Y variables from the same dataset in one plot
+ - Select variables in the Overlay variables menu.
+ - Use Include current Y-variable if you want the currently selected variable included automatically
+ - Colors are assigned from the active palette; you can override them manually in *Advanced Options*
+
+- **Advanced Options (Flag Style & Markers)**
+ - Switch between scatter and line plots
+ - Adjust opacity and line width
+ - In single-variable mode, markers can be hollow circles for better visibility of flagged rings
+
+- **Smoother Overlay**
+Add a LOESS smoother to any plot:
+ - Adjustable span parameter to control curve smoothness
+ - Option to display a 95% confidence interval
+ - Toggle Show only smoothed line(s) to hide base scatter/lines and keep just the LOESS curves
+
+- **Color Options**
+ - For single-variable or overlay mode, colors follow the chosen palette (Okabe–Ito, Tableau10, viridis, etc.) or manual overrides
+ - For dataset comparison, colors are set separately under the Compare two datasets menu
+
+- **Time Subsetting**
+Subset your dataset by year, month(s), day(s), or time of day
+ - Example: Select 06:00–18:00 to restrict analysis to daytime values
+ - Icons update dynamically: a ☀️ sun for daytime, 🌙 moon for nighttime
+
+- **Select data**: Use the box or lasso to select points. This populates the “Current” code box with something like:
 
 ```{r, eval=FALSE}
    df <- df %>%
@@ -75,13 +111,13 @@ run_fluxtools()
      )
 ```
    
-5. **Flag data and Accumulate code**: With points still selected, click “Flag data.” Selected points turn orange, and code is appended to the “Accumulated” box, allowing multiple selections per session.
+- **Flag data and Accumulate code**: With points still selected, click “Flag data.” Selected points turn orange, and code is appended to the “Accumulated” box, allowing multiple selections per session.
 
-6. **Unflag data**: Use the box or lasso to de-select points and remove from the Accumulated code box.
+- **Unflag data**: Use the box or lasso to de-select points and remove from the Accumulated code box.
    
-7. **Clear Selection**: To reset all selections from the current y-variable, click "Clear Selection" to reset the current view.
+- **Clear Selection**: To reset all selections from the current y-variable, click "Clear Selection" to reset the current view.
  
-8. **Switch variables**: Change y to any other variable (e.g., `SWC_1_1_1`) and select more points. Click “Flag data” Code for both variables to appear:
+- **Switch variables**: Change y to any other variable (e.g., `SWC_1_1_1`) and select more points. Click “Flag data” Code for both variables to appear:
 
 ```{r, eval=FALSE}
    df <- df %>%
@@ -105,24 +141,23 @@ run_fluxtools()
      )
 ```
    
-9. **Compare variables**: Change to variables you would like to compare (e.g., change y to `TA_1_1_1` and x to `T_SONIC_1_1_1`). The app computes an R² via simple linear regression. The top R² is based on points before removals, and once data is selected, a second R² will pop up - calculating the linear regression assuming the selected points have been removed
+- **Compare variables**: Change to variables you would like to compare (e.g., change y to `TA_1_1_1` and x to `T_SONIC_1_1_1`). The app computes an R² via simple linear regression. The top R² is based on points before removals, and once data is selected, a second R² will pop up - calculating the linear regression assuming the selected points have been removed
 
-10. **Highlight outliers**: Use the slider to select ±σ residuals. Click “Select all ±σ outliers” to append them to the Accumulated code. Click “Clear ±σ outliers” to deselect and remove from the code box
+- **Highlight outliers**: Use the slider to select ±σ residuals. Click “Select all ±σ outliers” to append them to the Accumulated code. Click “Clear ±σ outliers” to deselect and remove from the code box
 
-11. **Copy all**: Click the Copy Icon to the right of the current or accumulated code box and paste into your own R script for documentation
+- **Copy all**: Click the Copy Icon to the right of the current or accumulated code box and paste into your own R script for documentation
 
-12. **Apply Removals**: Click “Apply Removals” to remove each selected data points, from the current y-variable, to replace points with `NA` in a new .csv (raw data is unaffected), available using 'export cleaned data' and remove these values from view
+- **Apply Removals**: Click “Apply Removals” to remove each selected data points, from the current y-variable, to replace points with `NA` in a new .csv (raw data is unaffected), available using 'export cleaned data' and remove these values from view
 
-13. **Reload original data**: Make a mistake or want a fresh start? Click Reload original data to reload the .csv from above to start over
+- **Reload original data**: Make a mistake or want a fresh start? Click Reload original data to reload the .csv from above to start over
 
-14. **Export cleaned data**: Download a ZIP containing:
+- **Export cleaned data**: Download a ZIP containing:
 - A cleaned CSV (with applied NAs)
 - An R script that reproduces your removals
 - Optional PRM summary when used (see below)
 
 
-# Physical Boundary Module (PRM) function:
-
+- **Physical Boundary Module (PRM) function:**
 The **Physical Range Module (PRM)** removes out-of-range values to `NA` based on similar **variables** using patterns like `^SWC($|_)` or `^P($|_)`.  
 Columns containing `"QC"` are skipped by default. No columns are removed.
 
@@ -157,7 +192,6 @@ df_filtered_swc <- apply_prm(df, include = "SWC")
 df_filtered_swc_P <- apply_prm(df, include = c("SWC", "P"))
 
 ```
-
 
 ## Physical Range Module Values
 ```{r prm_rules_table_final, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}

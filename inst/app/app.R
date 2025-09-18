@@ -1,7 +1,17 @@
-#how to make left panel collapsible but have the flag options still show up?
-#how to add smoothed line option (with options for how smoothed)
-#how to assign colors for each variable without being a huge pain
+#Fluxtools code
 
+#UPDATES (9/2025)
+# - [X]  add  line (instead of scatterplot) option
+# - [X]  add smoothed line option (with options for how smoothed with loess)
+# - [X]  add overlay option, for line or smooth on top of scatterplot (or line) with opacity feature
+# - [X]  time filter (allow for night vs day); Bonus: If time picked is between 6am and 8pm, have a sun icon pop up, or a moon during 8pm to 6am
+# - [X]  Select months (similar to select years) or specific day (subset plots to these timeframes)
+# - [X]  how to assign colors for each variable without being a huge pain
+# - [X]  two data comparison option? this would allow the user to upload a second dataset
+# the goal for second dataset is for data comparison, not necessarily flagging! is there a good way to do this?
+#Flags work in comparison mode but only for dataset 1!
+
+#Packages
 library(shiny)
 library(plotly)
 library(dplyr)
@@ -9,42 +19,66 @@ library(bslib)     # for theming
 library(shinyWidgets) #for time selector
 library(readr)
 
+#File Size Limit
 # Allow larger uploads (here: up to 1gb)
-options(shiny.maxRequestSize = 1024 * 1024 * 1024) #1gb
+options(shiny.maxRequestSize = 1024 * 1024 * 1024)
 
-## ── 1) Theme ───────────────────────────────────────────────────────
+#Theme----
 light_theme <- bs_theme(
   bootswatch = "cerulean",
-  base_font_size  = "14px",    # ← bump this up (default is 14px)
-  font_scale      = 1        # ← or scale everything to 120%
+  base_font_size  = "14px",
+  font_scale      = 1
 )
 
 dark_theme <- bs_theme(
   version        = 5,
   bootswatch     = "slate",
-  base_font_size  = "14px",    # ← bump this up (default is 14px)
-  font_scale      = 1,        # ← or scale everything to 120%
+  base_font_size  = "14px",
+  font_scale      = 1,
   fg             = "#EEE",
   bg             = "#222",
   input_bg       = "#333",
-  input_fg       = "#EEE"#,
+  input_fg       = "#EEE"
 )
 
-ui <- fluidPage(
-  style = "height:100vh; overflow:hidden;",
-  theme = light_theme,
+#UI----
 
-  tags$head(
-    tags$style(HTML("
+#<head> assets in one object
+head_assets <- tags$head(
+  # ⬇️ paste your exact tags$style / tags$script blocks here
+  tags$style(HTML("
   /* shrink tables inside modals + PRM help */
-  #help_prm_table, #prm_summary_tbl, .modal-body table {
-    font-size: 0.8rem;
-  }
+  #help_prm_table, #prm_summary_tbl, .modal-body table { font-size: 0.8rem; }
   /* wrap tables so they scroll instead of overflowing */
   .table-wrap { max-width:100%; overflow-x:auto; }
 ")),
+  tags$style(HTML('
+     /* Slightly smaller, grayscale icons by default; restore on hover/focus */
+    .btn .fa, .btn .bi,
+    .accordion-button .fa, .accordion-button .bi,
+    summary .fa, summary .bi {
+    font-size: 0.95em;
+    filter: grayscale(100%);
+    opacity: .85;
+    transition: filter .15s ease, opacity .15s ease, transform .15s ease;
+    }
+    .btn:hover .fa, .btn:focus .fa,
+    .btn:hover .bi, .btn:focus .bi,
+    .accordion-button:hover .fa, .accordion-button:focus .fa,
+    .accordion-button:hover .bi, .accordion-button:focus .bi,
+    summary:hover .fa, summary:focus .fa,
+    summary:hover .bi, summary:focus .bi {
+      filter: none;
+      opacity: 1;
+    }
+    /* Also trim icon padding so they feel tighter */
+    .btn .fa, .btn .bi { margin-right: .4rem; }
 
-    tags$style(HTML('
+    /* Optional: make icon-only links (like the ? help) a touch smaller */
+    .navbar .fa, .navbar .bi,
+    .title-panel .fa, .title-panel .bi {
+      font-size: 0.9em;
+    }
           .swatch-row { display:flex; align-items:center; gap:.5rem; margin:.25rem 0; }
       .sw { width:14px; height:14px; border-radius:50%; display:inline-block;
             border:1px solid rgba(0,0,0,.25); }
@@ -73,27 +107,33 @@ ui <- fluidPage(
       .accordion-button .fa, .accordion-button .bi { margin-right:.5rem; }
       .accordion-body { background: var(--bs-body-bg); padding: 1rem 1.25rem; }
       html[data-bs-theme="slate"] .accordion > .accordion-item { border-color:#444; box-shadow:0 .25rem .75rem rgba(0,0,0,.25); }
-    ')),
+                  ')),
+  tags$script(HTML("
+    document.addEventListener('keydown', function(e){
+      // when focus is inside the Selectize control for prm_families
+      var wrap = document.querySelector('#prm_families + .selectize-control');
+      if (!wrap) return;
+      var hasFocus = wrap.contains(document.activeElement);
+      if (hasFocus && e.key === 'Enter') {
+        var btn = document.getElementById('apply_prm_btn');
+        if (btn) btn.click();
+      }
+    });
+    ")),
+
+  #for colors
+  tags$script(HTML('
+  Shiny.addCustomMessageHandler("markBadHex", function(x){
+    var el = document.getElementById(x.id);
+    if(!el) return;
+    if(x.bad) el.classList.add("bad-hex"); else el.classList.remove("bad-hex");
+  });
+')),
 
 
 
-
-tags$script(HTML("
-document.addEventListener('keydown', function(e){
-  // when focus is inside the Selectize control for prm_families
-  var wrap = document.querySelector('#prm_families + .selectize-control');
-  if (!wrap) return;
-  var hasFocus = wrap.contains(document.activeElement);
-  if (hasFocus && e.key === 'Enter') {
-    var btn = document.getElementById('apply_prm_btn');
-    if (btn) btn.click();
-  }
-});
-")),
-
-    tags$script(HTML("
-
-  function initTooltips(root){
+  tags$script(HTML("
+    function initTooltips(root){
     root = root || document;
     var els = [].slice.call(root.querySelectorAll('[data-bs-toggle=\"tooltip\"]'));
     els.forEach(function(el){
@@ -132,8 +172,7 @@ document.addEventListener('keydown', function(e){
     }
   }).observe(document.body, { childList: true, subtree: true });
 ")),
-
-    tags$script(HTML('
+  tags$script(HTML('
   Shiny.addCustomMessageHandler("updateTooltip", function(x){
     var el = document.getElementById(x.id);
     if(!el) return;
@@ -159,7 +198,7 @@ document.addEventListener('keydown', function(e){
   });
 ')),
 
-    tags$script(HTML('
+  tags$script(HTML('
   function copyVisibleCode(){
     var which = document.querySelector("input[name=code_choice]:checked").value;
     var srcId = which==="current" ? "code_current" : "code_all";
@@ -177,26 +216,337 @@ document.addEventListener('keydown', function(e){
     if(btn) btn.onclick = copyVisibleCode;
   });
 '))
-),
+)
 
-  titlePanel(
-    div(
-      "fluxtools: Interactive QA/QC with Code Generator",
-      actionLink("help", label = icon("question-circle"), style = "margin-left:10px;")
+#make tiny title + subtitle blocks----
+title_bar <- titlePanel(
+  div(
+    "fluxtools: Interactive QA/QC with Code Generator",
+    actionLink("help", label = icon("question-circle"), style = "margin-left:10px;")
+  )
+)
+
+subtitle_bar <- uiOutput("subtitle")
+
+
+#Side Panel ----
+sidebar_controls <- sidebarPanel(
+  width = 4,
+  style = "max-height: calc(100vh - 80px); overflow-y: auto;",
+
+  # Data Upload and Selection ----
+  tags$h5("Data upload and selection"),
+  fileInput("csv_file", "Upload Ameriflux‐style or Fluxnet .csv:", accept = ".csv"),
+
+
+
+  # UTC offset ----
+  bslib::accordion(
+    id = "advanced_tz_box",
+    open = "advanced",
+    bslib::accordion_panel(
+      title = tagList(icon("sliders-h"), "Set timezone"),
+      value = "advanced",
+      div(class = "mb-2 mt-2",
+          tags$label(
+            id    = "data_offset_label",
+            `for` = "data_offset",
+            "Interpret TIMESTAMP_START as local time in:",
+            'data-bs-toggle' = "tooltip",
+            title = "Fixed timestamp; no DST (Raw timestamps are not changed)"
+          ),
+          selectInput(
+            "data_offset", label = NULL,
+            choices  = sprintf("UTC%+d", -12:14),
+            selected = "UTC+0", width = "100%"
+          ),
+          tags$small(class = "form-text text-muted fst-italic",
+                     "This only changes how times are shown in the app; export retains original strings")
+      ),
+      tags$details(
+        class = "mt-1",
+        tags$summary("Show timestamp parsing details"),
+        tags$pre(style = "margin-top:.5rem;", textOutput("tz_check"))
+      )
     )
-  ),  # ← comma was missing after this
+  ),
+
+  #Compare option:----
+  tags$h5("Compare two datasets"),
+
+  #This is too complicated at the moment, need to simplify color and line options here. per dataset makes more sense than per variable for two data comparision
+
+  checkboxInput("compare_mode", "Compare two datasets", FALSE),
+  conditionalPanel("input.compare_mode",
+                   tags$h6("Upload Dataset B"),
+                   fileInput("csv_file_b", "Upload comparison CSV:", accept = ".csv"),
+                   tags$small(class = "form-text text-muted fst-italic",
+                              "IMPORTANT: Flag options ONLY work for Dataset A with this option!"),
+
+                   hr(),
+
+                   #Naming
+                   tags$h6("Update Labels"),
+                   conditionalPanel(
+                     "input.compare_mode",
+                     fluidRow(
+                       column(6, textInput("label_a", "Dataset A label", "Dataset A")),
+                       column(6, textInput("label_b", "Dataset B label", "Dataset B"))
+                     )
+                   ),
+                   hr(),
 
 
-  uiOutput("subtitle"),
+                   # --- Dataset color pickers (simple, no extra pkgs) ---
+                   #also have line type options!
+                   tags$h6("Dataset colors"),
+                   uiOutput("ds_color_ui")
 
-  sidebarLayout(
-    sidebarPanel(
-      style = "max-height: calc(100vh - 80px); overflow-y: auto;",
-      width = 4,
+                   ),
+  hr(),
 
-      tags$h5("Data upload and selection"),
-      fileInput("csv_file", "Upload Ameriflux‐style or Fluxnet .csv:", accept = ".csv"),
+  # Plot selection ----
+  tags$h5("Plot selection"),
+  fluidRow(
+    column(
+      6,
+      tags$label(`for` = "yvar", "Y-axis:", style  = "width:100%; font-weight:500;"),
+      tagAppendAttributes(
+        selectInput("yvar", NULL, choices = NULL, width = "100%"),
+        'data-bs-toggle' = "tooltip",
+        title = "Select your Y-axis variable — the column whose values will be set to NA"
+      )
+    ),
+    column(
+      6,
+      tags$label(`for` = "xvar", "X-axis:", style  = "width:100%; font-weight:500;"),
+      tagAppendAttributes(
+        selectInput("xvar", NULL, choices = NULL, width = "100%"),
+        'data-bs-toggle' = "tooltip",
+        title = "Select your X-axis variable"
+      )
+    )
+  ),
 
+  # Overlay mode ----
+  checkboxInput("overlay_mode", "Plot multiple variables", FALSE),
+  conditionalPanel(
+    "input.overlay_mode",
+    div(
+      class = "d-flex align-items-end gap-2",
+      div(
+        style="flex:1;",
+        selectizeInput(
+          "overlay_vars", "Overlay variables",
+          choices = NULL, multiple = TRUE,
+          options = list(placeholder = "Choose ≥1 variables",
+                         plugins = list("remove_button")),
+          width = "100%"
+        ),
+        checkboxInput("overlay_include_y", "Include current y-variable", TRUE)
+      )
+    )
+  ),
+
+  # Advanced (style & markers) ----
+  bslib::accordion(
+    id = "advanced_flg_box",
+    open = FALSE,
+    bslib::accordion_panel(
+      title = tagList(icon("sliders-h"), "Advanced (flag style & markers)"),
+      value = "advanced",
+
+      tags$h5("Select Plot type (default: Scatterplot)"),
+
+      radioButtons(
+        "geom_mode", NULL,
+        choices  = c("Scatter" = "scatter", "Line" = "line"),
+        selected = "scatter",
+        inline   = TRUE
+      ),
+
+      sliderInput("overlay_alpha", "Point/line opacity",
+                  min = 0, max = 1, value = 0.70, step = 0.05),
+
+      # Scatter options----
+      conditionalPanel(
+        "input.geom_mode == 'scatter'",
+        bslib::accordion(
+          id = "scatterplot_opt", open = FALSE,
+          bslib::accordion_panel(
+            title = tagList(icon("sliders-h"), "Scatter options"),
+            value = "scatter_opts",
+            tags$h5("Scatter options"),
+            sliderInput("overlay_size", "Point size",
+                        min = 1, max = 14, value = 6, step = 1),
+
+            checkboxInput("overlay_hollow", "Use hollow circles", TRUE)
+          )
+       )
+      ),
+
+      # Line options----
+      conditionalPanel(
+        "input.geom_mode == 'line'",
+        bslib::accordion(
+          id = "line_opt", open = FALSE,
+          bslib::accordion_panel(
+            title = tagList(icon("sliders-h"), "Line options"),
+            value = "line_opts",
+            tags$h5("Line options"),
+            sliderInput("line_lwd", "Line width",
+                        min = 1, max = 8, value = 2, step = 1),
+            checkboxInput("line_show_points",
+                          "Add transparent points so lasso selection works (use for flag selection!)", TRUE)
+          )
+        )
+      ),
+
+      # Smoother overlay----
+      bslib::accordion(
+        id = "smooth_opt", open = FALSE,
+        bslib::accordion_panel(
+          title = tagList(icon("chart-line"), "Smoother overlay"),
+          value = "smooth_opts",
+          checkboxInput("show_smooth", "Add smoothed line", FALSE),
+
+          conditionalPanel(
+            "input.show_smooth",
+            selectInput(
+              "smooth_method", "Method",
+              choices = c("LOESS (loess)" = "loess"),
+              selected = "loess"
+            ),
+            conditionalPanel(
+              "input.smooth_method == 'loess'",
+              sliderInput("smooth_span", "LOESS span", min = .05, max = 1, value = .4, step = .05)
+            ),
+            checkboxInput("smooth_show_ci", "Show 95% CI band", FALSE),
+            sliderInput("smooth_lwd",   "Smoother width",   min = 1, max = 8, value = 3,  step = 1),
+            sliderInput("smooth_alpha", "Smoother opacity", min = 0, max = 1, value = .6, step = .05)
+          ),
+          checkboxInput("only_smooth", "Show only smoothed line(s)", FALSE)
+
+        )
+      ),
+
+
+      hr(),
+
+      # Color----
+      tags$h5("Color"),
+
+      # --- MULTI-VAR COLOR UI (compare-style) ---
+      uiOutput("overlay_color_ui"),
+
+      conditionalPanel("!input.overlay_mode", uiOutput("single_color_ui"))
+      ,
+
+
+      conditionalPanel(
+        "input.y_color_style == 'custom'",
+        textInput("y_color_custom", "Custom hex", value = "#1F449C", width = "100%")
+      )
+      ,
+      selectInput(
+        "overlay_palette", "Theme",
+        choices = c(
+          "Tableau 10"    = "tableau10",
+          "Okabe–Ito"     = "okabe",
+          "Set2 (pastel)" = "set2",
+          "Viridis (dark)"= "viridis",
+          "Key"           = "key"
+        ),
+        selected = "tableau10", width = "100%"
+      ),
+      tags$small(class="text-muted d-block",
+                 "y-axis color selection applies only to the single-variable view"),
+      tags$small(class="text-muted d-block",
+                 "Plotting multiple variables uses the palette"),
+
+#Color Key
+hr(),
+      uiOutput("pair_legend"),
+      checkboxInput("show_pair_legend", "Show color key", TRUE),
+
+hr(),
+      #flags----
+      tags$h5("Flag Options"),
+      sliderInput("flag_size", "Flag point size", min = 1, max = 14, value = 8, step = 1),
+
+      selectInput(
+        "flag_color_scheme", "Flag color style",
+        choices = c(
+          "Yellow (classic)"        = "yellow",
+          "Match variable (darker)" = "match_dark",
+          "Match variable (lighter)"= "match_light"
+        ),
+        selected = "yellow", width = "100%"
+      ),
+
+    )
+
+  ),
+
+
+
+  hr(),
+
+  # Interact with data ----
+  tags$h5("Interact with data"),
+  fluidRow(
+    column(
+      6,
+      actionButton(
+        "add_sel", "Flag Data",
+        width = "100%", icon = icon("check"),
+        'data-bs-toggle' = "tooltip",
+        title = "Add the selected points to the accumulated removal code"
+      )
+    ),
+    column(
+      6,
+      actionButton(
+        "clear_sel","Clear Selection",
+        width = "100%", icon = icon("broom"),
+        'data-bs-toggle' = "tooltip",
+        title = "Clear all flagged points from the current y-variable from the accumulated removal code"
+      )
+    )
+  ),
+  fluidRow(
+    column(
+      6,
+      actionButton(
+        "remove_acc","Unflag Data",
+        width = "100%", icon = icon("ban"),
+        'data-bs-toggle' = "tooltip",
+        title = "Remove current selection from the accumulated removal code"
+      )
+    ),
+    column(
+      6,
+      actionButton(
+        "remove","Apply removals",
+        width = "100%", icon = icon("trash"),
+        'data-bs-toggle' = "tooltip",
+        title = "Turn the currently selected Y‐values into NA's and remove from view. These will be reflected in the exported .csv using the 'export cleaned data' button"
+      )
+    )
+  ),
+
+  hr(),
+
+  # Time subset ----
+  tags$h5("Data subset options"),
+  bslib::accordion(
+    id = "advanced_timesub_box",
+    open = FALSE,
+    bslib::accordion_panel(
+      title = tagList(icon("clock"), "Time subset"),
+      value = "advanced",
+
+      tags$h5("Select by Year"),
       tagAppendAttributes(
         selectizeInput(
           "year_sel", "Select Year(s):",
@@ -208,474 +558,565 @@ document.addEventListener('keydown', function(e){
           width = "100%"
         ),
         'data-bs-toggle' = "tooltip",
-        'data-bs-title' = "Filter to one or more years"
+        'data-bs-title'  = "Filter to one or more years"
       ),
 
-     # --- UTC select with tooltip on the label ---
-     tags$details(
-       # default is closed; omit or set open = FALSE
-       # open = FALSE,
-       tags$summary(HTML('<i class="fa fa-globe"></i> Set Timezone')),
+      tags$h5("Select by Month"),
+      shinyWidgets::pickerInput(
+        inputId = "month_sel",
+        label   = "Select month(s):",
+        choices = stats::setNames(1:12, month.abb),
+        multiple = TRUE,
+        options = list(
+          `actions-box` = TRUE,
+          `selected-text-format` = "count > 3",
+          `none-selected-text`   = "All months"
+        )
+      ),
 
-       # UTC select with tooltipbed label
-       div(class = "mb-2 mt-2",
-           tags$label(
-             id    = "data_offset_label",
-             `for` = "data_offset",
-             "View TIMESTAMP_START in:",
-             'data-bs-toggle' = "tooltip",
-             title = "Fixed timestamp; no DST"
-           ),
-           selectInput(
-             "data_offset", label = NULL,
-             choices  = sprintf("UTC%+d", -12:14),
-             selected = "UTC+0", width = "100%"
-           ),
-           tags$small(class = "form-text text-muted fst-italic",
-                      "This only changes how times are shown in the app; exports keep original strings.")
-       ),
+      tags$h5("Select by Day"),
+      shinyWidgets::airDatepickerInput(
+        inputId    = "day_sel",
+        label      = "Specific day(s):",
+        multiple   = TRUE,
+        autoClose  = TRUE,
+        clearButton = TRUE,
+        placeholder = "Pick one or more days"
+      ),
 
-       # Nest the parsing details inside the same wrapper
-       tags$details(
-         class = "mt-1",
-         tags$summary("Show timestamp parsing details"),
-         tags$pre(style = "margin-top:.5rem;", textOutput("tz_check"))
-       )
-     ),
-      hr(),
+      tags$h5("Select by Hour"),
+      shinyWidgets::sliderTextInput(
+        inputId  = "hod_rng",
+        label    = "Hours of day (local):",
+        choices  = sprintf("%02d:00", 0:24),
+        selected = c("00:00", "24:00"),
+        grid     = TRUE,
+        dragRange = TRUE
+      ),
+      checkboxInput("hod_invert", "Use outside these hours (night)", FALSE),
 
+      tags$small(class = "text-muted",
+                 "*Time filters are applied in the chosen viewing timezone")
+    )
+  ),
 
-      tags$h5("Plot selection"),
+  # PRM + Range/Time/Outliers/Code (grouped) ----
+  bslib::accordion(
+    id = "prm_sections",
+    open = FALSE,
+
+    # PRM
+    bslib::accordion_panel(
+      title = tags$span(
+        class = "d-inline-flex align-items-center gap-2",
+        icon("seedling"),
+        tags$span(
+          HTML("Physical Range Module&nbsp;(PRM)"),
+          'data-bs-toggle'   = "tooltip",
+          'data-bs-placement' = "right",
+          title              = "Clamp variables to possible physical ranges; out-of-range → NA"
+        )
+      ),
+      value = "prm",
+
+      tags$h5("Use the Physical Range Module"),
       fluidRow(
         column(
           6,
-          tags$label(`for` = "yvar", "Y-axis:", style  = "width:100%; font-weight:500;"),
-          tagAppendAttributes(
-            selectInput("yvar", NULL, choices = NULL, width = "100%"),
-            'data-bs-toggle' = "tooltip",
-            title = "Select your Y-axis variable — the column whose values will be set to NA"
+          actionButton(
+            "apply_prm_btn", "Apply PRM",
+            width = "100%", icon = icon("sliders-h"),
+            'data-bs-toggle'="tooltip",
+            title="Clamp to PRM bounds; out-of-range set to NA. Reversible."
           )
         ),
         column(
           6,
-          tags$label(`for` = "xvar", "X-axis:", style  = "width:100%; font-weight:500;"),
-
-          tagAppendAttributes(
-            selectInput("xvar", NULL, choices = NULL, width = "100%"),
-            'data-bs-toggle' = "tooltip",
-            title = "Select your X-axis variable"
-          )
+          actionButton(
+            "undo_prm_btn", "Undo PRM",
+            width = "100%", icon = icon("undo"),
+            'data-bs-toggle'="tooltip",
+            title="Reverts only values changed by the last PRM apply. Other edits unaffected.")
         )
       ),
-
-    # --- Overlay mode ---
-    checkboxInput("overlay_mode", "Plot multiple variables", FALSE),
-    conditionalPanel(
-      "input.overlay_mode",
-      div(
-        class = "d-flex align-items-end gap-2",
-        div(
-          style="flex:1;",
+      tags$small(class = "text-muted",
+                 "Note: This turns data values into 'NA' when outside of the PRM range (See Help: PRM for specific values)"),
+      hr(),
+      tags$details(
+        tags$summary("PRM options"),
+        tagAppendAttributes(
           selectizeInput(
-            "overlay_vars", "Overlay variables",
+            "prm_families", "Variables (optional):",
             choices = NULL, multiple = TRUE,
-            options = list(placeholder = "Choose ≥1 variables",
-                           plugins = list("remove_button")), #did i mess this up?
-            width = "100%"
+            options = list(
+              placeholder = "Default: All relevant variables matched by PRM",
+              plugins = list("remove_button")
+            )
           ),
-          checkboxInput("overlay_include_y", "Include current y-variable", TRUE),
-          selectInput(
-            "overlay_palette", "Overlay palette",
-            choices = c(
-              "Okabe–Ito"       = "okabe",
-              "Tableau 10"      = "tableau10",
-              "Set2 (pastel)"   = "set2",
-              "Viridis (dark)"  = "viridis",
-              "Key"             = "key"
-            ),
-            selected = "okabe", width = "100%"
-          )
-        )
+          'data-bs-toggle'="tooltip",
+          title="Type base names like SWC, P, TA, CO2 (we match columns by name prefix, e.g. ^SWC($|_)). Leave empty to apply to all"
+        ),
+        div(class="d-grid gap-2 mt-2",
+            actionButton("apply_prm_subset", "Apply PRM to selected", icon = icon("play")))
       )
     ),
-
-    # Advanced: flag style & markers (applies to overlay and single-Y)
-    tags$details(
-      id = "adv_flags",
-      tags$summary(HTML('<i class="fa fa-sliders-h"></i> Advanced (flag style & markers)')),
-
-      #color selection
-      # Y color (single-Y only)
-      tags$small(class="text-muted",
-                 "y-axis color selection applies only to the single-variable view. ",
-                 "Plotting multiple variables use color palettes"),
-
-      conditionalPanel(
-        "!input.overlay_mode",
-        selectInput(
-          "y_color_style", "y-axis color (single view)",
-          choices = c(
-            "Theme accent (default)" = "default",
-            "Black"        = "black",
-            "Custom"                = "custom"
-          ),
-          selected = "default", width = "100%"
-        ),
-        conditionalPanel(
-          "input.y_color_style == 'custom'",
-          textInput("y_color_custom", "Custom hex", value = "#1F449C", width = "100%")
-        )
-      ),
-
-
-      # universal: used in overlay and single-Y
-      selectInput(
-        "flag_color_scheme", "Flag color style",
-        choices = c(
-          "Yellow (classic)"              = "yellow",
-          "Match variable (darker)"       = "match_dark",
-          "Match variable (lighter)"      = "match_light"#,
-          #"Accessible pair (color-blind)" = "accessible"
-        ),
-        selected = "yellow", width = "100%"
-      ),
-
-      # small copy tweak so it makes sense in single-Y too
-      checkboxInput("show_pair_legend", "Show color key", TRUE),
-      uiOutput("pair_legend"),
-      checkboxInput("overlay_hollow", "Use hollow circles", TRUE),
-      sliderInput("overlay_size",  "Point size",        min = 1,  max = 14, value = 6,  step = 1),
-      sliderInput("flag_size",     "Flag point size",   min = 1,  max = 14, value = 8,  step = 1),
-
-
-    ),
-
-
-
-
 
 
     hr(),
+    tags$h5("Flag options"),
 
+    # Flag by range
+    bslib::accordion_panel(
+      title = tagList(icon("sliders-h"), "Flag by value range"),
+      value = "range",
+      tags$h5("Flag Values based on range"),
+      selectInput("rng_var", "Variable", choices = NULL),
+      checkboxInput("rng_link_y", "Link selected variable to plot Y-axis", TRUE),
+      fluidRow(
+        column(6, numericInput("rng_min", "Min (optional)", value = NA)),
+        column(6, numericInput("rng_max", "Max (optional)", value = NA))
+      ),
+      div(class="d-grid gap-2",
+          actionButton("rng_flag", "Flag values outside range"))
+    ),
 
-      tags$h5("Interact with data"),
+    # Flag by time
+    bslib::accordion_panel(
+      title = tagList(icon("clock"), "Flag by date range"),
+      value = "time",
+      tags$h5("Flag Values based on Date"),
+      sliderInput(
+        "time_rng", "TIMESTAMP_START range:",
+        min = 0, max = 1, value = c(0, 1),
+        timeFormat = "%Y-%m-%d\n%H:%M", step  = 3600
+      ),
       fluidRow(
         column(
           6,
-          actionButton(
-            "add_sel", "Flag Data",
-            width = "100%", icon = icon("check"),
-            'data-bs-toggle' = "tooltip",
-            title = "Add the selected points to the accumulated removal code"
+          shinyWidgets::airDatepickerInput(
+            inputId    = "start_dt", label = "Start:",
+            timepicker = TRUE, autoClose  = TRUE,
+            placeholder = "Select start"
           )
         ),
         column(
           6,
-          actionButton(
-            "clear_sel","Clear Selection",
-            width = "100%", icon = icon("broom"),
-            'data-bs-toggle' = "tooltip",
-            title = "Clear all flagged points from the current y-variable from the accumulated removal code"
+          shinyWidgets::airDatepickerInput(
+            inputId    = "end_dt", label = "End:",
+            timepicker = TRUE, autoClose  = TRUE,
+            placeholder = "Select end"
           )
         )
       ),
+      fluidRow(
+        column(6, actionButton("time_flag",     "Flag inside",  class = "btn btn-primary w-100")),
+        column(6, actionButton("time_flag_out", "Flag outside", class = "btn btn-outline-primary w-100"))
+      )
+    ),
 
+    # Outliers
+    bslib::accordion_panel(
+      title = tagList(icon("wave-square"), "Flag outliers"),
+      value = "outliers",
+      tags$h5("Select outliers"),
+      sliderInput("sd_thresh", "Highlight points beyond σ:", min = 0, max = 3, value = 0, step = 1),
+      checkboxInput("show_reg", "Show regression line & R²", value = TRUE),
       fluidRow(
         column(
           6,
-          actionButton(
-            "remove_acc","Unflag Data",
-            width = "100%", icon = icon("ban"),
+          tagAppendAttributes(
+            actionButton("add_outliers", "Select all ±σ outliers", width="100%"),
             'data-bs-toggle' = "tooltip",
-            title = "Remove current selection from the accumulated removal code"
+            title = "Select every point whose residual is beyond ± n standard deviations (σ) from the regression line and add to the accumulated code"
           )
         ),
         column(
           6,
-          actionButton(
-            "remove","Apply removals",
-            width = "100%", icon = icon("trash"),
+          tagAppendAttributes(
+            actionButton("clear_outliers", "Clear ±σ outliers", width="100%"),
             'data-bs-toggle' = "tooltip",
-            title = "Turn the currently selected Y‐values into NA's and remove from view. These will be reflected in the exported .csv using the 'export cleaned data' button"
+            title = "Remove ± n standard deviations (σ) from the regression line from your the accumulated code"
           )
         )
       ),
+      tags$small(class = "text-muted",
+                 "Note: outlier detection uses the current Y variable only (does not support multi-selected variables)")
+    ),
 
-      hr(),
+    # Code generation
+    bslib::accordion_panel(
+      title = tagList(icon("code"), "Code generation"),
+      value = "code",
 
-      bslib::accordion(
-        id = "qa_sections",
-        open = FALSE,
+      tags$h5("Automatic code generation for nullifying data"),
 
-#flag by range
-        bslib::accordion_panel(
-          title = tagList(icon("sliders-h"), "Flag by value range"),
-          value = "range",
-          checkboxInput("rng_link_y", "Link selected variable to plot Y-axis", TRUE),
-          selectInput("rng_var", "Variable", choices = NULL),
-          div(class = "mt-1", uiOutput("rng_scope_ui")),
-
-          fluidRow(
-            column(6, numericInput("rng_min", "Min (optional)", value = NA)),
-            column(6, numericInput("rng_max", "Max (optional)", value = NA))
-          ),
-          div(class="d-grid gap-2",
-              actionButton("rng_flag", "Flag values outside range"))
-        ),
-
-#flag by time
-        bslib::accordion_panel(
-          title = tagList(icon("clock"), "Flag by time"),
-          value = "time",
-          sliderInput(
-            "time_rng", "TIMESTAMP_START range:",
-            min   = 0,
-            max   = 1,
-            value = c(0, 1),
-            timeFormat = "%Y-%m-%d\n%H:%M",
-            step  = 3600
-          ),
-          fluidRow(
-            column(
-              6,
-              shinyWidgets::airDatepickerInput(
-                inputId    = "start_dt",
-                label      = "Start:",
-                timepicker = TRUE,
-                autoClose  = TRUE,
-                placeholder = "Select start"
-              )
-            ),
-            column(
-              6,
-              shinyWidgets::airDatepickerInput(
-                inputId    = "end_dt",
-                label      = "End:",
-                timepicker = TRUE,
-                autoClose  = TRUE,
-                placeholder = "Select end"
-              )
+      fluidRow(
+        class = "align-items-center g-2",
+        style = "display: flex; align-items: center; margin-bottom: 0.5rem;",
+        column(
+          width = 8, style = "padding-right: 0;",
+          div(
+            class = "mb-0",
+            radioButtons(
+              "code_choice", NULL,
+              choiceNames  = list(
+                tagList(icon("code"), HTML("&nbsp;Current")),
+                tagList(icon("list-ul"), HTML("&nbsp;Accumulated"))
+              ),
+              choiceValues = c("current", "all"),
+              inline       = TRUE
             )
-          ),
-
-          fluidRow(
-            column(6, actionButton("time_flag",     "Flag inside",  class = "btn btn-primary w-100")),
-            column(6, actionButton("time_flag_out", "Flag outside", class = "btn btn-outline-primary w-100"))
-          )
-            ),
-
-#Select outliers
-        bslib::accordion_panel(
-          title = tagList(icon("wave-square"), "Select outliers"),
-          #title = tagList(icon("bullseye"), "Select outliers"),
-          value = "outliers",
-          tags$h5("Select outliers"),
-          sliderInput("sd_thresh", "Highlight points beyond σ:", min = 0, max = 3, value = 0, step = 1),
-          checkboxInput("show_reg", "Show regression line & R²", value = TRUE),
-          fluidRow(
-            column(
-              6,
-              tagAppendAttributes(
-                actionButton("add_outliers", "Select all ±σ outliers", width="100%"),
-                'data-bs-toggle' = "tooltip",
-                title = "Select every point whose residual is beyond ± n standard deviations (σ) from the regression line and add to the accumulated code"
-              )
-            ),
-            column(
-              6,
-              tagAppendAttributes(
-                actionButton("clear_outliers", "Clear ±σ outliers", width="100%"),
-                'data-bs-toggle' = "tooltip",
-                title = "Remove ± n standard deviations (σ) from the regression line from your the accumulated code"
-              )
-
-            ),
-            tags$small(class = "text-muted",
-                       "Note: outlier detection uses the current Y variable only; overlay is ignored")
           )
         ),
+        column(
+          width = 4, class = "copy-button-col",
+          tags$button(
+            id    = "copy_code_btn",
+            type  = "button",
+            class = "btn btn-outline-secondary w-100 d-inline-flex align-items-center justify-content-center gap-2",
+            'data-bs-toggle' = "tooltip",
+            title = "Copy visible code",
+            icon("clipboard"),
+            span("Copy code"),
+            onclick = HTML("
+              var which = document.querySelector('input[name=code_choice]:checked').value;
+              var srcId = which==='current' ? 'code_current' : 'code_all';
+              var txt   = document.getElementById(srcId).innerText;
+              var ta = document.createElement('textarea');
+              ta.value = txt; ta.setAttribute('readonly','');
+              ta.style.position = 'absolute'; ta.style.left = '-9999px';
+              document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+              document.body.removeChild(ta);
+              Shiny.setInputValue('did_copy_code', Math.random());
+            ")
+          )
+        )
+      ),
 
-#prm module
-bslib::accordion_panel(
-  title = tags$span(
+      uiOutput("code_ui"),
 
-    class = "d-inline-flex align-items-center gap-2",
-    icon("seedling"),  # far = Font Awesome Regular
-    #icon("sliders"),
-    tags$span(
-      HTML("Physical Range Module&nbsp;(PRM)"),
-      'data-bs-toggle'   = "tooltip",
-      'data-bs-placement' = "right",
-      title              = "Clamp variables to possible physical ranges; out-of-range → NA"
+      conditionalPanel(
+        "input.code_choice == 'all'",
+        actionButton(
+          "reset_accum", "Clear accumulated",
+          width = "100%",
+          'data-bs-toggle'="tooltip",
+          title = "Remove all points from accumulated list"
+        )
+      ),
+      tags$small(class = "text-muted",
+                 "Note: Current code turns the currently selected data flags into 'NA'. Accumulated code shows code for all removals; it will be included in the exported ZIP as an R script.")
     )
-  ),
-  value = "prm",
+  ),  # end prm_sections accordion
 
+  hr(),
+
+  # Downloads / toggles ----
   fluidRow(
     column(
-      6,
-      actionButton(
-        "apply_prm_btn", "Apply PRM",
-        width = "100%", icon = icon("sliders-h"),
-        'data-bs-toggle'="tooltip",
-        title="Clamp to PRM bounds; out-of-range set to NA. Reversible."
+      3,
+      tagAppendAttributes(
+        downloadButton("download_csv", "Save cleaned CSV", icon = icon("file-csv"), width = "100%"),
+        'data-bs-toggle' = "tooltip",
+        title = "Download just the cleaned CSV (keeps original TIMESTAMP_START strings)"
       )
     ),
     column(
-      6,
-      actionButton(
-        "undo_prm_btn", "Undo PRM",
-        width = "100%", icon = icon("undo"),
-        'data-bs-toggle'="tooltip",
-        title="Reverts only values changed by the last PRM apply. Other edits unaffected."
-      )
-    )
-  ),
-
-
-  tags$details(
-    tags$summary("PRM options"),
-    tagAppendAttributes(
-      selectizeInput(
-        "prm_families", "Variables (optional):",
-        choices = NULL, multiple = TRUE,
-        options = list(
-          placeholder = "Default: All relevant variables matched by PRM",
-          plugins = list("remove_button")
-        )
-      ),
-      'data-bs-toggle'="tooltip",
-      title="Type base names like SWC, P, TA, CO2 (we match columns by name prefix, e.g. ^SWC($|_)). Leave empty to apply to all"
-    ),
-    div(class="d-grid gap-2 mt-2",
-        actionButton("apply_prm_subset", "Apply PRM to selected", icon = icon("play"))
-    )
-  )
-
-),
-
-#code generation
-        bslib::accordion_panel(
-          title = tagList(icon("code"), "Code generation"),
-          value = "code",
-
-          fluidRow(
-            class = "align-items-center g-2",
-            style = "display: flex; align-items: center; margin-bottom: 0.5rem;",
-
-            column(
-              width = 8, style = "padding-right: 0;",
-              div(
-                class = "mb-0",
-                radioButtons(
-                  "code_choice", NULL,
-                  choiceNames  = list(
-                    tagList(icon("code"), HTML("&nbsp;Current")),
-                    tagList(icon("list-ul"), HTML("&nbsp;Accumulated"))
-                  ),
-                  choiceValues = c("current", "all"),
-                  inline       = TRUE
-                )
-              )
-            ),
-
-            column(
-              width = 4, class = "copy-button-col",
-              tags$button(
-                id    = "copy_code_btn",
-                type  = "button",
-                class = "btn btn-outline-secondary w-100 d-inline-flex align-items-center justify-content-center gap-2",
-                #class = "btn btn-outline-secondary w-100",
-                #"Copy visible code",
-                'data-bs-toggle' = "tooltip",
-                title = "Copy visible code",
-                icon("clipboard"),
-                span("Copy code"),
-                onclick = HTML("
-            // pick current or accumulated
-            var which = document.querySelector('input[name=code_choice]:checked').value;
-            var srcId = which==='current' ? 'code_current' : 'code_all';
-            var txt   = document.getElementById(srcId).innerText;
-            // old‐school textarea hack
-            var ta = document.createElement('textarea');
-            ta.value = txt;
-            ta.setAttribute('readonly','');
-            ta.style.position = 'absolute';
-            ta.style.left = '-9999px';
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            document.body.removeChild(ta);
-            // fire an input event so Shiny can show its own toast
-            Shiny.setInputValue('did_copy_code', Math.random());
-          ")
-              )
-            )
-          ),
-
-          uiOutput("code_ui"),
-
-          conditionalPanel(
-            "input.code_choice == 'all'",
-            actionButton(
-              "reset_accum", "Clear accumulated",
-              width = "100%",
-              'data-bs-toggle'="tooltip",
-              title = "Remove all points from accumulated list"
-            )
-          )
-        )
-      ),
-
-      hr(),
-
-      fluidRow(
-        # inside the same fluidRow as the ZIP/download
-        column(
-          3,
-          tagAppendAttributes(
-            downloadButton("download_csv", "Save cleaned CSV", icon = icon("file-csv"), width = "100%"),
-            'data-bs-toggle' = "tooltip",
-            title = "Download just the cleaned CSV (keeps original TIMESTAMP_START strings)"
-          )
-        )
-        ,
-
-        column(
-          3,
-          tagAppendAttributes(
-            downloadButton("download_data", "Export zip file", icon = icon("file-archive"), width="100%"),
-            'data-bs-toggle' = "tooltip",
-            title = "Download a .zip containing the cleaned CSV (with NAs applied using the 'Apply Removals' button) and the removal R-script"
-          )
-        ),
-        column(
-          3,
-          tagAppendAttributes(
-            actionButton("reset_data", "Reload original data", icon = icon("eraser"), width="100%"),
-            'data-bs-toggle' = "tooltip",
-            title = "Reset any changes by re-loading the original .csv file"
-          )
-        ),
-        column(
-          3,
-          div(style="margin-top:0.5em;", checkboxInput("dark_mode","Dark mode",FALSE))
-        )
+      3,
+      tagAppendAttributes(
+        downloadButton("download_data", "Export zip file", icon = icon("file-archive"), width="100%"),
+        'data-bs-toggle' = "tooltip",
+        title = "Download a .zip containing the cleaned CSV and the removal R script"
       )
     ),
-
-    mainPanel(
-      width = 8,
-      plotlyOutput("qc_plot", width = "100%", height = "80vh")
+    column(
+      3,
+      tagAppendAttributes(
+        actionButton("reset_data", "Reload original data", icon = icon("eraser"), width="100%"),
+        'data-bs-toggle' = "tooltip",
+        title = "Reset any changes by re-loading the original .csv file"
+      )
+    ),
+    column(
+      3,
+      div(style="margin-top:0.5em;", checkboxInput("dark_mode","Dark mode",FALSE))
     )
   )
 )
 
 
+
+
+
+
+
+
+
+
+
+
+#server----
 server <- function(input, output, session) {
+  phase_badge <- reactive({
+    .current_phase_icons(input$hod_rng, isTRUE(input$hod_invert))
+  })
 
   #NA strings for r script output
   NA_STRINGS <- c("NA","NaN","","-9999","-9999.0","-9999.00","-9999.000")
+
+  # --- init reactive stores early (so we can use rv immediately) ---
+  rv <- reactiveValues(
+    df = NULL,
+    df_before_prm = NULL,
+    prm_active = FALSE,
+    prm_summary = NULL,
+    prm_mask = NULL,
+    prm_include = NULL   # <- add this
+  )
+
+  labA <- reactive({
+    req(input$compare_mode)          # only valid when compare UI exists
+    input$label_a %||% "Dataset A"
+  })
+  labB <- reactive({
+    req(input$compare_mode)
+    input$label_b %||% "Dataset B"
+  })
+
+
+  raw_df_b <- reactive({
+    req(input$compare_mode, input$csv_file_b)
+    read.csv(input$csv_file_b$datapath, stringsAsFactors = FALSE,
+             colClasses = c(TIMESTAMP_START = "character"), na.strings = NA_STRINGS)
+  })
+
+  shifted_df_b <- reactive({
+    df0 <- raw_df_b(); req(df0)
+    digits <- gsub("[^0-9]", "", df0$TIMESTAMP_START %||% "")
+    digits <- substr(paste0(digits, "0000"), 1, 12)
+    off_hr <- data_off_hr()
+    ts_utc <- as.POSIXct(digits, format = "%Y%m%d%H%M", tz = "UTC") - off_hr*3600
+    df0 %>% mutate(raw_ts = TIMESTAMP_START, ts_str = digits,
+                   TIMESTAMP_START = ts_utc, .row = dplyr::row_number())
+  })
+
+  df_compare_long <- reactive({
+    req(input$compare_mode, rv$df, shifted_df_b())
+    make_long <- function(df, src){
+      num <- df %>% select(-TIMESTAMP_START, -raw_ts, -ts_str, -.row) %>% select(where(is.numeric))
+      tidyr::pivot_longer(
+        df, cols = all_of(names(num)), names_to = "variable", values_to = "value"
+      ) %>% mutate(source = src)
+    }
+    bind_rows(
+      make_long(df_by_year(), "A"),
+      make_long({
+        # apply same year/month/day/hour filters to B
+        tmp <- shifted_df_b()
+        # re-use your df_by_year logic by factoring into a function or quickly mimicking:
+        off_hours <- data_off_hr()
+        tmp$local_ts    <- tmp$TIMESTAMP_START + off_hours*3600
+        tmp$local_date  <- as.Date(tmp$local_ts, tz = data_tz())
+        tmp$local_month <- as.integer(format(tmp$local_ts, "%m"))
+        tmp$local_hour  <- as.numeric(format(tmp$local_ts, "%H")) + as.numeric(format(tmp$local_ts, "%M"))/60
+        # apply the same filters you used above...
+        if (!identical(input$year_sel, "All")) {
+          yrs <- setdiff(input$year_sel, "All")
+          tmp <- tmp[format(tmp$TIMESTAMP_START, "%Y") %in% yrs, , drop = FALSE]
+        }
+        if (length(input$month_sel)) tmp <- tmp[tmp$local_month %in% as.integer(input$month_sel), , drop = FALSE]
+        if (length(input$day_sel))   tmp <- tmp[tmp$local_date %in% as.Date(input$day_sel), , drop = FALSE]
+        if (length(input$hod_rng) == 2) {
+          hh <- .parse_hhmm(input$hod_rng)
+          in_rng <- .hod_in_range(tmp$local_hour, hh[1], hh[2])
+          tmp <- tmp[ if (isTRUE(input$hod_invert)) !in_rng else in_rng , , drop = FALSE]
+        }
+        tmp
+      }, "B")
+    )
+  })
+
+  var_colors <- reactiveValues()  # map: var -> hex
+
+  observe({
+    req(rv$df)
+    vars <- names(rv$df %>% dplyr::select(where(is.numeric)))
+    # ensure we always have a default palette entry
+    defaults <- setNames(pal_overlay(length(vars)), vars)
+    for (v in vars) if (is.null(var_colors[[v]])) var_colors[[v]] <- defaults[[v]]
+  })
+
+  # keep map in sync with inputs
+  observe({
+    if (!isTRUE(input$enable_var_colors)) return()
+    req(rv$df)
+    vars <- names(rv$df %>% dplyr::select(where(is.numeric)))
+    for (v in vars) {
+      id <- paste0("col_", v)
+      val <- input[[id]]
+      if (!is.null(val) && nzchar(val)) var_colors[[v]] <- val
+    }
+  })
+
+  # validate & store
+  .valid_hex <- function(x) isTRUE(grepl("^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$", x))
+  observe({
+    if (!isTRUE(input$enable_var_colors)) return()
+    req(rv$df)
+    vars <- names(rv$df %>% dplyr::select(where(is.numeric)))
+    for (v in vars) {
+      id  <- paste0("col_", v)
+      val <- input[[id]]
+      # keep defaults if empty
+      if (is.null(val) || !nzchar(val)) next
+      # set reactive map only when valid
+      if (.valid_hex(val)) var_colors[[v]] <- toupper(val)
+      # mark invalid in the DOM (no extra libs)
+      session$sendCustomMessage("markBadHex", list(id = id, bad = !.valid_hex(val)))
+    }
+  })
+  # JS helper once (near your other addCustomMessageHandler blocks)
+  session$onFlushed(function(){
+    session$sendCustomMessage("noop", NULL)
+  }, once = TRUE)
+
+  # returns the proper x vector for the given data.frame and current xvar
+  x_for <- function(d) {
+    if (identical(input$xvar, "TIMESTAMP_START")) d$ts_view else d[[input$xvar]]
+  }
+
+
+  # small helper used later
+  # NULL-coalescing that’s safe for vectors
+  `%||%` <- function(x, y) if (is.null(x)) y else x
+
+  # # NULL-coalescing that’s safe for vectors
+  # `%||%` <- function(x, y) {
+  #   if (is.null(x)) return(y)
+  #   # optionally treat a single empty string as NULL
+  #   if (is.character(x) && length(x) == 1 && !nzchar(x)) return(y)
+  #   x
+  # }
+
+
+  #color helpers
+  .valid_hex <- function(x) isTRUE(grepl("^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$", x))
+
+  #more color helpers
+
+
+  # Pretty label helper for colored swatches
+  .pretty_opt <- function(hex_or_custom) {
+    if (hex_or_custom == "custom") return(HTML("Custom…"))
+    HTML(sprintf(
+      "<span style='display:inline-block;width:0.9em;height:0.9em;border-radius:50%%;margin-right:.4em;background:%s;'></span>%s",
+      hex_or_custom, hex_or_custom
+    ))
+  }
+
+  output$ds_color_ui <- renderUI({
+    # same values you defined earlier
+    ds_vals <- c("#fe4a49", "#009fb7", "#721cb8", "#509724",
+                 "#ffbf00", "#1F77B4", "#FF7F0E", "custom")
+
+    label_html <- function(hex) {
+      if (hex == "custom") return("Custom…")
+      sprintf(
+        "<span style='display:inline-block;width:0.9em;height:0.9em;border-radius:50%%;margin-right:.4em;background:%s;'></span>%s",
+        hex, hex
+      )
+    }
+    labels <- vapply(ds_vals, label_html, "")
+
+    tagList(
+      fluidRow(
+        column(
+          6,
+          shinyWidgets::pickerInput(
+            inputId = "pick_ds_A", label = "Dataset A color",
+            choices = ds_vals, selected = "#fe4a49",
+            options = list(`live-search` = FALSE),
+            choicesOpt = list(content = as.list(labels))
+          ),
+          conditionalPanel(
+            "input.pick_ds_A == 'custom'",
+            textInput("col_ds_A", NULL, value = "#fe4a49", width = "100%", placeholder = "#RRGGBB")
+          )
+        ),
+        column(
+          6,
+          shinyWidgets::pickerInput(
+            inputId = "pick_ds_B", label = "Dataset B color",
+            choices = ds_vals, selected = "#009fb7",
+            options = list(`live-search` = FALSE),
+            choicesOpt = list(content = as.list(labels))
+          ),
+          conditionalPanel(
+            "input.pick_ds_B == 'custom'",
+            textInput("col_ds_B", NULL, value = "#009fb7", width = "100%", placeholder = "#RRGGBB")
+          )
+        )
+      ),
+      tags$style(HTML("input.bad-hex { border-color:#dc3545!important; box-shadow:none!important; }"))
+    )
+  })
+
+
+  # Optional: live hex validation (re-uses your markBadHex handler)
+  observe({
+    if (!is.null(input$col_ds_A))
+      session$sendCustomMessage("markBadHex", list(id = "col_ds_A", bad = !.valid_hex(input$col_ds_A)))
+    if (!is.null(input$col_ds_B))
+      session$sendCustomMessage("markBadHex", list(id = "col_ds_B", bad = !.valid_hex(input$col_ds_B)))
+  })
+
+  # Final dataset color reactive (names MUST match df_compare_long()$source values "A"/"B")
+
+  ds_cols <- reactive({
+    a <- if (identical(input$pick_ds_A, "custom")) input$col_ds_A else input$pick_ds_A
+    b <- if (identical(input$pick_ds_B, "custom")) input$col_ds_B else input$pick_ds_B
+    a <- if (.valid_hex(a)) toupper(a) else "#fe4a49"
+    b <- if (.valid_hex(b)) toupper(b) else "#009fb7"
+    c(A = a, B = b)
+  })
+
+  #time helper
+  .parse_hhmm <- function(x) {
+    if (is.null(x) || length(x) != 2) return(c(0, 24))
+    as.numeric(sub(":.*","", x)) + as.numeric(sub(".*:","", x))/60
+  }
+  .hod_in_range <- function(h, start, end) {
+    if (is.na(start) || is.na(end) || start == end) return(rep(TRUE, length(h)))   # all day
+    if (start < end) (h >= start & h < end) else (h >= start | h < end)            # wrap-aware
+  }
+  # Returns ☀️, 🌙, or "☀️ 🌙" depending on selected hours (with invert)
+  .current_phase_icons <- function(hh_vec, invert = FALSE) {
+    hh  <- .parse_hhmm(hh_vec)
+    hrs <- seq(0, 24, by = 0.5)
+    sel <- .hod_in_range(hrs, hh[1], hh[2])
+    if (invert) sel <- !sel
+
+    day     <- .hod_in_range(hrs, 6, 18)
+    day_on  <- any(sel & day)
+    nite_on <- any(sel & !day)
+
+    icons <- character(0)
+    if (day_on)  icons <- c(icons, "☀")
+    if (nite_on) icons <- c(icons, "☾")
+
+    if (length(icons) == 0) return("—")
+    paste(icons, collapse = " ")
+  }
+
+  x_title_with_phase <- function() {
+    badge <- phase_badge()
+    if (length(badge) == 0 || is.na(badge)) badge <- ""   # ← guard
+    if (identical(input$xvar, "TIMESTAMP_START")) {
+      sprintf("%s  TIMESTAMP_START (UTC%+d)", badge, data_off_hr())
+    } else {
+      sprintf("%s  %s", badge, input$xvar)
+    }
+  }
 
   # ---- visual constants (no sliders needed) ----
   POINT_ALPHA      <- 0.70   # base points
@@ -688,14 +1129,70 @@ server <- function(input, output, session) {
 
   #control y color
   y_base_color <- reactive({
-    s <- input$y_color_style %||% "theme"
-    if (s == "black") return("#000000")
-    if (s == "default")      return("#1F449C")
-    #if (s == "tableau")    return("#4E79A7")
-    if (s == "custom")     return(input$y_color_custom %||% "#1F449C")
-    # theme default (light/dark)
-    if (isTRUE(input$dark_mode)) "#1F62FF" else "#1F449C"
+    mode <- input$single_color_mode %||% "theme"
+
+    if (mode == "theme") {
+      # keep “Theme accent” behavior EXACTLY as before
+      return(pal_overlay(1)[1])
+    }
+
+    # manual (compare-style)
+    pick <- input$pick_y_color
+    hex  <- if (identical(pick, "custom")) input$y_color_custom else pick
+    if (.valid_hex(hex)) toupper(hex) else "#1F449C"
   })
+
+  #single variable ui
+  # Single-dataset color UI (compare-style)
+  output$single_color_ui <- renderUI({
+    # same swatch list you use for compare
+    ds_vals <- c("#fe4a49", "#009fb7", "#721cb8", "#509724",
+                 "#ffbf00", "#1F77B4", "#D62728", "custom")
+
+    labels <- vapply(
+      ds_vals,
+      function(hex) if (hex == "custom") "Custom…" else
+        sprintf("<span style='display:inline-block;width:0.9em;height:0.9em;border-radius:50%%;margin-right:.4em;background:%s;'></span>%s", hex, hex),
+      ""
+    )
+
+    tagList(
+      radioButtons(
+        "single_color_mode", "Select y-axis variable color",
+        choices  = c("Use theme (default)" = "theme",
+                     "Manual (single variable)" = "manual"),
+        selected = isolate(input$single_color_mode %||% "theme"),
+        inline   = TRUE
+      ),
+
+      # Manual picker (compare-style)
+      conditionalPanel(
+        "input.single_color_mode == 'manual'",
+        shinyWidgets::pickerInput(
+          inputId = "pick_y_color", label = NULL,
+          choices = ds_vals, selected = "#fe4a49", width = "100%",
+          options = list(`live-search` = FALSE),
+          choicesOpt = list(content = as.list(labels))
+        ),
+
+
+        conditionalPanel(
+          "input.pick_y_color == 'custom'",
+          textInput("y_color_custom", NULL, value = "#1F449C",
+                    width = "100%", placeholder = "#RRGGBB")
+        )
+      ),
+
+      # # helpful notes you already had
+      # tags$small(class="text-muted d-block",
+      #            "y-axis color applies only to the single-variable view"),
+      # tags$small(class="text-muted d-block",
+      #            "Overlay uses the palette or per-var colors")
+    )
+  })
+
+
+
 
 
 
@@ -755,18 +1252,7 @@ server <- function(input, output, session) {
   })
 
 
-
-  #PRM
-  # --- init reactive stores early (so we can use rv immediately) ---
-  rv <- reactiveValues(
-    df = NULL,
-    df_before_prm = NULL,
-    prm_active = FALSE,
-    prm_summary = NULL,
-    prm_mask = NULL,
-    prm_include = NULL   # <- add this
-  )
-
+  #PRM----
   last_sel <- reactiveValues(x = NULL, y = NULL)
 
   observeEvent(input$xvar, { last_sel$x <- input$xvar }, ignoreInit = TRUE)
@@ -825,29 +1311,13 @@ server <- function(input, output, session) {
     if (is.null(sel)) integer(0) else sel$key
   })
 
-  # flag_cols_for <- function(vars, base_cols, scheme = "match_dark") {
-  #   n <- length(vars); if (!n) return(setNames(character(0), character(0)))
-  #   scheme <- scheme %||% "match_dark"
-  #
-  #   if (scheme == "yellow")
-  #     return(setNames(rep("#FFC20A", n), vars))
-  #
-  #   if (scheme == "match_dark")
-  #     return(setNames(vapply(base_cols, function(h) darken_hex(h, .50), ""), vars))
-  #
-  #   if (scheme == "match_light")
-  #     return(setNames(vapply(base_cols, function(h) tint_hex(h, .60), ""), vars))
-  #
-  #   # fallback
-  #   setNames(vapply(base_cols, function(h) darken_hex(h, .50), ""), vars)
-  # }
-
 
   # Auto-pick “pairs” for color-blind friendly palettes; else use user choice
   # was auto-switching to "pairs" for some palettes — remove that
   flag_scheme <- reactive({
     input$flag_color_scheme %||% "match_dark"
   })
+
 
   # keep explicit options; fall back to match_dark (not pairs)
   flag_cols_for <- function(vars, base_cols, scheme = "match_dark") {
@@ -887,6 +1357,14 @@ server <- function(input, output, session) {
     paste0("c(\n  ", paste(inside, collapse = ",\n  "), "\n)")
   }
 
+  #time helper
+  # Helper: safe range for POSIXct; returns NULL if no finite values
+  safe_posix_range <- function(x) {
+    if (is.null(x)) return(NULL)
+    x_ok <- x[is.finite(as.numeric(x))]
+    if (!length(x_ok)) return(NULL)
+    range(x_ok)
+  }
 
   # --- color helpers ---
   tint_hex <- function(hex, amt = 0.45) {
@@ -909,8 +1387,11 @@ server <- function(input, output, session) {
   rows_for_time <- function(df) {
     vars <- vars_to_edit()
     base <- !is.na(df$TIMESTAMP_START)
-    if (!length(vars)) return(base)                       # no overlay → whole timeline
-    any_non_na <- Reduce(`|`, lapply(vars, function(v) !is.na(df[[v]])))
+    if (!length(vars)) return(base)
+    # no overlay → whole timeline
+    any_non_na <- Reduce(`|`, lapply(vars, function(v) !is.na(df[[v]])))  # vectorized per row
+    #any_non_na <- Reduce(`|`, lapply(vars, function(v) isTRUE(!is.na(df[[v]]))))
+    #any_non_na <- Reduce(`|`, lapply(vars, function(v) !is.na(df[[v]])))
     base & any_non_na
   }
 
@@ -940,8 +1421,6 @@ server <- function(input, output, session) {
     unique(k)
   })
 
-  # small helper used later
-  `%||%` <- function(x, y) if (is.null(x)) y else x
 
   # helper (put near other helpers)
   infer_cadence_sec <- function(ts) {
@@ -988,6 +1467,19 @@ server <- function(input, output, session) {
   #time range
   # rng_var -> yvar
   is_syncing <- reactiveVal(FALSE)
+
+  #observeEvents----
+  #when the palette changes and manual overrides are not enabled, refresh var_colors to the new defaults so everything stays in sync
+  observeEvent(input$overlay_palette, {
+    if (!isTRUE(input$enable_var_colors)) {
+      req(rv$df)
+      vars <- names(rv$df %>% dplyr::select(where(is.numeric)))
+      defaults <- setNames(pal_overlay(length(vars)), vars)
+      for (v in vars) var_colors[[v]] <- defaults[[v]]
+    }
+  }, ignoreInit = TRUE)
+
+
 
   observeEvent(input$rng_var, {
     if (isTRUE(input$rng_link_y) && !is_syncing()) {
@@ -1090,11 +1582,25 @@ server <- function(input, output, session) {
   # --- helpers ---
   parse_utc_hours <- function(lbl) as.integer(sub("UTC([+-]?\\d+).*", "\\1", lbl))
 
-  data_off_hr <- reactive({ parse_utc_hours(req(input$data_offset)) })
+  data_off_hr <- reactive({
+    val <- input$data_offset
+    if (is.null(val) || !nzchar(val)) return(0L)   # default UTC+0 if control absent
+    parse_utc_hours(val)
+  })
+
   data_tz <- reactive({
     off <- data_off_hr()
-    if (off == 0) "UTC" else paste0("Etc/GMT", if (off < 0) "+" else "-", abs(off))  # POSIX sign flip
+    if (off == 0) "UTC" else sprintf("Etc/GMT%s%d", if (off < 0) "+" else "-", abs(off))
   })
+
+
+  # data_tz <- reactive({
+  #   off <- data_off_hr()
+  #   if (off == 0) "UTC" else paste0("Etc/GMT", if (off < 0) "+", "-")[1] %||% ""  # sign flip handled below
+  #   if (off == 0) "UTC" else paste0("Etc/GMT", if (off < 0) "+" else "-", abs(off))
+  # })
+
+
 
   #Date selection helper
   #to_view_time   <- function(x) as.POSIXct(as.numeric(x) + data_off_hr()*3600, origin="1970-01-01", tz = data_tz())
@@ -1149,8 +1655,8 @@ server <- function(input, output, session) {
     showNotification("Code copied ✅", type="message", duration = 1)
   })
 
-  #color overlay
-  # color overlay (no extra packages)
+  #color overlay----
+  # ---- palettes (single source of truth) ----
   pal_overlay <- function(n, which = input$overlay_palette) {
     which <- which %||% "tableau10"
 
@@ -1164,23 +1670,27 @@ server <- function(input, output, session) {
     set2  <- c("#66C2A5","#FC8D62","#8DA0CB","#E78AC3",
                "#A6D854","#FFD92F","#E5C494","#B3B3B3")
 
-    key   <- c("#fe4a49", "#009fb7",
-               "#721cb8", "#509724",
-               "#ffbf00")
+    # your preset swatches
+    key   <- c("#fe4a49","#009fb7","#721cb8","#509724","#ffbf00",
+               "#1F77B4","#D62728")  # add blue/red here too
 
     base <- switch(which,
                    okabe     = okabe,
                    tableau10 = tab10,
                    set2      = set2,
                    key       = key,
-                   viridis   = grDevices::hcl.colors(max(n, 1), "viridis"),  # dark-ish viridis only
+                   viridis   = grDevices::hcl.colors(max(n, 1), "viridis"),
                    tab10
     )
 
     if (n <= length(base)) base[seq_len(n)] else grDevices::colorRampPalette(base)(n)
   }
 
-
+  # helper: named map for variables
+  var_cols <- function(vars) {
+    cols <- pal_overlay(length(vars))
+    setNames(cols, vars)
+  }
   #color overlay end
 
   #UTC helper
@@ -1193,7 +1703,7 @@ server <- function(input, output, session) {
                origin = "1970-01-01", tz = "UTC")
 
 
-  #PRM Server
+  #PRM Server----
   observeEvent(input$apply_prm_subset, {
     req(rv$df)
 
@@ -1304,13 +1814,6 @@ server <- function(input, output, session) {
     )
   })
 
-  # # toggle a 'dark-mode' class on <body>
-  # observe({
-  #   addClass  <- if (isTRUE(input$dark_mode)) "dark-mode" else ""
-  #   removeClass <- if (isTRUE(input$dark_mode)) "" else "dark-mode"
-  #   #session$sendCustomMessage("toggleBodyClass", list(add=addClass, remove=removeClass))
-  # })
-
   #overlay
   observe({
     req(rv$df)
@@ -1353,17 +1856,16 @@ server <- function(input, output, session) {
     updateSelectInput(session, "rng_var", label = lbl)
   })
 
-    #Prm
+  #Prm
   # server()
   observe({
     fam <- input$prm_families
     lab <- if (length(fam)) sprintf("Apply PRM (%d selected)", length(fam)) else "Apply PRM (all)"
-  updateActionButton(session, "apply_prm_btn", label = lab)
+    updateActionButton(session, "apply_prm_btn", label = lab)
   })
 
-    # PRM family choices present in the data
-    # PRM variable choices present in the uploaded data
-  # Put this somewhere in server() AFTER rv$df exists:
+  # PRM family choices present in the data
+  # PRM variable choices present in the uploaded data
   observe({
     req(rv$df)
     present <- tryCatch({
@@ -1389,53 +1891,84 @@ server <- function(input, output, session) {
     )
   })
 
-  # 3) Reactive: df_by_year() filters rv$df by whichever years the user picked.
+
   df_by_year <- reactive({
     req(rv$df, input$year_sel)
-    # If the user has "All" selected *and* no other year, return the full data:
-    if (identical(input$year_sel, "All")) {
-      return(rv$df)
+    df <- rv$df
+
+    # Year filter (unchanged)
+    if (!identical(input$year_sel, "All")) {
+      yrs <- setdiff(input$year_sel, "All")
+      df  <- df[format(df$TIMESTAMP_START, "%Y") %in% yrs, , drop = FALSE]
+    }
+
+    # Local time columns
+    off_hours <- data_off_hr()
+    df$local_ts    <- df$TIMESTAMP_START + off_hours * 3600
+    df$local_date  <- as.Date(df$local_ts, tz = data_tz())
+    df$local_month <- as.integer(format(df$local_ts, "%m"))
+    df$local_hour  <- as.numeric(format(df$local_ts, "%H")) +
+      as.numeric(format(df$local_ts, "%M"))/60
+
+    # Month filter (optional)
+    if (!is.null(input$month_sel) && length(input$month_sel) > 0) {
+      df <- df[df$local_month %in% as.integer(input$month_sel), , drop = FALSE]
+    }
+
+    # Specific day(s) filter (optional)
+    if (!is.null(input$day_sel) && length(input$day_sel) > 0) {
+      sel_dates <- as.Date(input$day_sel)
+      df <- df[df$local_date %in% sel_dates, , drop = FALSE]
+    }
+
+    # Hour-of-day filter (wrap-aware + invert; full-day passes through)
+    if (!is.null(input$hod_rng) && length(input$hod_rng) == 2) {
+      hh <- .parse_hhmm(input$hod_rng)
+      in_rng <- .hod_in_range(df$local_hour, hh[1], hh[2])
+      df <- df[ if (isTRUE(input$hod_invert)) !in_rng else in_rng , , drop = FALSE]
     }
 
 
-    # Otherwise, drop "All" (if present) and filter by the remaining years:
-    chosen_years <- setdiff(input$year_sel, "All")
 
-    rv$df %>%
-      filter(format(TIMESTAMP_START, "%Y") %in% chosen_years)
+    df
   })
+
+
 
   # replace your current observeEvent(df_by_year(), { ... }) with this:
   observe({
     df <- df_by_year(); req(df)
-    ts <- df$TIMESTAMP_START[ rows_for_time(df) ]
 
+    ts <- df$TIMESTAMP_START[ rows_for_time(df) ]
+    ts <- ts[is.finite(as.numeric(ts))]
 
     if (length(ts) >= 2) {
-      step <- infer_cadence_sec(ts)       # 1800 or 3600
-      r    <- range(ts)
+      step <- infer_cadence_sec(ts)
+      r    <- safe_posix_range(ts)
+      if (is.null(r)) {
+        updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0,1), step = 3600)
+        return()
+      }
       r[1] <- align_to_step(r[1], step)
       r[2] <- ceil_to_step(r[2],  step)
       updateSliderInput(session, "time_rng",
                         min = r[1], max = r[2], value = r,
-                        step = step, timeFormat = "%Y-%m-%d\n%H:%M"
-      )
+                        step = step, timeFormat = "%Y-%m-%d\n%H:%M")
     } else {
-      # fallback: use whole data range if possible, otherwise a tiny dummy range
-      rng_all <- range(df$TIMESTAMP_START, na.rm = TRUE)
-      if (all(is.finite(rng_all))) {
+      rng_all <- safe_posix_range(df$TIMESTAMP_START)
+      if (is.null(rng_all)) {
+        updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0,1), step = 3600)
+      } else {
         step_f <- 3600L
         r1 <- align_to_step(rng_all[1], step_f)
         r2 <- ceil_to_step(rng_all[2],  step_f)
         updateSliderInput(session, "time_rng",
                           min = r1, max = r2, value = c(r1, r2),
-                          step = step_f, timeFormat = "%Y-%m-%d\n%H:%M"
-        )
-      } else {
-        updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0, 1), step = 3600)
+                          step = step_f, timeFormat = "%Y-%m-%d\n%H:%M")
       }
     }
   })
+
 
   #  Clear *current* selection in the code box:
   observeEvent(input$clear_sel, {
@@ -1454,21 +1987,6 @@ server <- function(input, output, session) {
                        type="message", duration=2)
     }
   })
-
-  # Show PRM summary table in a modal
-  # output$prm_summary_tbl <- renderTable({
-  #   s <- rv$prm_summary
-  #   req(s)
-  #   rules <- get_rules()
-  #   if (!is.null(rules)) {
-  #     u_map <- setNames(rules$units, rules$variable)
-  #     s$units <- unname(u_map[s$family])
-  #   } else {
-  #     s$units <- NA_character_
-  #   }
-  #   s$pct_replaced <- round(s$pct_replaced, 1)
-  #   s[, c("column","family","units","min","max","n_replaced","pct_replaced")]
-  # })
 
   observeEvent(input$apply_prm_btn, {
     req(rv$df)
@@ -1598,7 +2116,37 @@ server <- function(input, output, session) {
                       selected = if (!is.null(sel_y) && sel_y %in% y_choices) sel_y else y_choices[1])
 
     # Initialize/refresh the time slider from data
-    rng  <- range(df$TIMESTAMP_START, na.rm = TRUE)
+    rng  <- safe_posix_range(df$TIMESTAMP_START)
+    if (is.null(rng)) {
+      updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0,1), step = 3600)
+    } else {
+      step <- infer_cadence_sec(df$TIMESTAMP_START)
+      updateSliderInput(session, "time_rng",
+                        min = rng[1], max = rng[2], value = rng,
+                        step = step, timeFormat = "%Y-%m-%d\n%H:%M")
+    }
+
+    # overlay-aware initialization
+    ts_all <- df$TIMESTAMP_START[ rows_for_time(df) ]
+    ts_all <- ts_all[is.finite(as.numeric(ts_all))]
+    if (length(ts_all) >= 2) {
+      step0 <- infer_cadence_sec(ts_all)
+      r0    <- safe_posix_range(ts_all)
+      if (!is.null(r0)) {
+        r0[1] <- align_to_step(r0[1], step0)
+        r0[2] <- ceil_to_step(r0[2],  step0)
+        updateAirDateInput(session, "start_dt", value = to_view_time(r0[1]))
+        updateAirDateInput(session, "end_dt",   value = to_view_time(r0[2]))
+        updateSliderInput(session, "time_rng",
+                          min = r0[1], max = r0[2], value = r0,
+                          step = step0, timeFormat = "%Y-%m-%d\n%H:%M")
+      } else {
+        updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0,1), step = 3600)
+      }
+    } else {
+      updateSliderInput(session, "time_rng", min = 0, max = 1, value = c(0,1), step = 3600)
+    }
+
     step <- infer_cadence_sec(df$TIMESTAMP_START)
 
     updateSliderInput(
@@ -1664,15 +2212,6 @@ server <- function(input, output, session) {
     showNotification("Range flags applied per overlaid variable.", type="message", duration=2)
   })
 
-  observeEvent(input$rng_clear, {
-    v <- input$rng_var; req(v)
-    ts_v <- removed_ts[[v]] %||% character()
-    if (!length(ts_v)) return()
-    keep <- !(df_by_year()$ts_str %in% ts_v)
-    sel_keys(which(keep))
-    removed_ts[[v]] <- NULL
-  })
-
   # ────────────────────────────────────────────────────────────────────────────
   # Compute residuals & flag ±σ outliers
   # ────────────────────────────────────────────────────────────────────────────
@@ -1706,17 +2245,14 @@ server <- function(input, output, session) {
       if (isTRUE(input$dark_mode)) dark_theme else light_theme
     )
   })
-
+  #helpModal----
   helpModal <- function() {
     shiny::modalDialog(
       title     = "Help: fluxtools QA/QC",
       tabsetPanel(
         id = "help_tabs",
 
-        # ─── Quick Start ─────────────────────────────────────────────────────────
-
-
-
+        # ─── Quick Start ─────────────────────────────────────────────────────────----
         tabPanel(
           "Quick Start",
           tagList(
@@ -1836,263 +2372,546 @@ server <- function(input, output, session) {
   })
 
   # ────────────────────────────────────────────────────────────────────────────
+  # Plot tools
+  # ────────────────────────────────────────────────────────────────────────────
+  # Is the x-axis time?
+  is_time_x <- function() identical(input$xvar, "TIMESTAMP_START")
+
+  # Convert to/from "view time" (adds your fixed UTC offset for plotting)
+  to_view_x <- function(x) if (is_time_x()) x + data_off_hr()*3600 else x
+
+  # numeric version of any x for modeling
+  x_to_num <- function(x) if (inherits(x, "POSIXt")) as.numeric(x) else x
+  num_to_x <- function(x_num, proto) {
+    if (inherits(proto, "POSIXt")) as.POSIXct(x_num, origin="1970-01-01", tz="UTC") else x_num
+  }
+
+  # Make a smooth grid along x
+  make_grid <- function(x, n = 400L) {
+    rng <- range(x, na.rm = TRUE)
+    if (!is.finite(rng[1]) || !is.finite(rng[2]) || rng[1] >= rng[2]) return(x)
+    seq(rng[1], rng[2], length.out = n)
+  }
+
+  # Fit smoother and return yhat (+/- CI when available)
+  fit_smoother_df <- function(x, y, method = "loess", span = .4, k = 10, want_ci = FALSE) {
+    ok <- is.finite(x) & is.finite(y)
+    x <- x[ok]; y <- y[ok]
+    if (length(x) < 3) return(NULL)
+
+    xg <- make_grid(x)
+    out <- data.frame(x = xg, yhat = NA_real_, ymin = NA_real_, ymax = NA_real_)
+
+
+    if (method == "loess") {
+      fit <- try(loess(y ~ x, span = span, control = loess.control(surface = "direct")), silent = TRUE)
+      if (inherits(fit, "try-error")) return(NULL)
+      if (want_ci) {
+        pr <- predict(fit, newdata = xg, se = TRUE)
+        out$yhat <- pr$fit
+        se <- pr$se.fit
+        out$ymin <- pr$fit - 1.96 * se
+        out$ymax <- pr$fit + 1.96 * se
+      } else {
+        out$yhat <- predict(fit, newdata = xg)
+      }
+      return(out)
+    }
+
+    NULL
+  }
+
+  # Add smoother as lines (+ optional ribbons) to a plotly object
+  add_smoother_layer <- function(p, df, xcol, ycol, col_hex, name_prefix = "",
+                                 lwd = 3, line_alpha = .6, show_ci = FALSE) {
+    x_raw <- df[[xcol]]; y_raw <- df[[ycol]]
+    x_num <- x_to_num(x_raw)
+    sm <- fit_smoother_df(x = x_num, y = y_raw,
+                          method  = input$smooth_method %||% "loess",
+                          span    = input$smooth_span %||% .4,
+                          k       = input$smooth_k %||% 10,
+                          want_ci = isTRUE(show_ci))
+    if (is.null(sm)) return(p)
+
+    x_grid <- num_to_x(sm$x, x_raw)
+    x_plot <- to_view_x(x_grid)
+
+    p <- p %>% plotly::add_lines(
+      x = x_plot, y = sm$yhat,
+      name = paste0(name_prefix, if (nchar(name_prefix)) " " else "", "smooth"),
+      inherit = FALSE, showlegend = TRUE,
+      line = list(color = col_hex, width = lwd),
+      opacity = line_alpha,
+      hovertemplate = paste0(
+        "%{fullData.name}<br>",
+        "%{x|%Y-%m-%d %H:%M}<br>",
+        "ŷ = %{y:.3f}<extra></extra>"
+      )  # <- pretty hover; no 'hoveron' here
+    )
+
+    if (isTRUE(show_ci) && any(is.finite(sm$ymin) & is.finite(sm$ymax))) {
+      p <- p %>% plotly::add_ribbons(
+        x = x_plot, ymin = sm$ymin, ymax = sm$ymax,
+        inherit = FALSE, showlegend = FALSE,
+        line = list(width = 0),
+        fillcolor = hex_to_rgba(col_hex, min(0.35, line_alpha*0.6)),
+        hoverinfo = "skip"  # ribbons don’t need hover
+      )
+    }
+    p
+  }
+
+
+
+  # ────────────────────────────────────────────────────────────────────────────
   # Render the Plotly scatter (with event_register)
   # ────────────────────────────────────────────────────────────────────────────
-output$qc_plot <- renderPlotly({
-  overlay_on <- isTRUE(input$overlay_mode)
-  vars_plot  <- unique(c(if (isTRUE(input$overlay_include_y)) input$yvar, input$overlay_vars))
-  if (!length(vars_plot)) vars_plot <- input$yvar
+  output$qc_plot <- renderPlotly({
+    geom <- input$geom_mode %||% "scatter"
+    a    <- input$overlay_alpha %||% 0.70
+
+    df0 <- df_by_year()
+    req(df0, input$xvar, input$yvar)
+
+    #Defining smooth
+    #allows toggle so only smooth is seen
+    # Only hide base traces if the smoother is actually on
+    only_smooth <- isTRUE(input$only_smooth) && isTRUE(input$show_smooth)
+    #only_smooth <- isTRUE(input$only_smooth %||% FALSE)
+
+    # ─────────── NEW: comparison plot branch ───────────
+    if (isTRUE(input$compare_mode)) {
+      req(shifted_df_b())                       # ensure B exists
+      labsrc <- c(A = labA(), B = labB())
+
+      # decide which variables to show
+      vars_plot <- if (isTRUE(input$overlay_mode) && length(input$overlay_vars)) {
+        unique(c(if (isTRUE(input$overlay_include_y)) input$yvar, input$overlay_vars))
+      } else input$yvar
+
+      dd <- df_compare_long() %>%
+        dplyr::filter(variable %in% vars_plot, !is.na(value))
+
+      # time axis prep
+      if (identical(input$xvar, "TIMESTAMP_START")) {
+        dd$ts_view <- dd$TIMESTAMP_START + data_off_hr()*3600
+      }
+
+      p <- plotly::plot_ly(source = "qc_plot") %>% plotly::event_register("plotly_selected")
+
+      if (identical(input$compare_style, "varcolor")) {
+        # color by variable; linetype/marker symbol by dataset
+        cols <- setNames(pal_overlay(length(vars_plot)), vars_plot)
+
+        # allow per-variable overrides
+        for (v in names(cols)) {
+          if (!is.null(var_colors[[v]])) cols[[v]] <- var_colors[[v]]
+        }
+
+        for (v in vars_plot) {
+          for (src in c("A","B")) {
+            dds <- dd[dd$variable == v & dd$source == src, , drop = FALSE]
+            if (!nrow(dds)) next
+            nm <- paste0(v, " — ", labsrc[[src]])
+
+            if (!only_smooth) {
+              if (geom == "line") {
+                p <- p %>% plotly::add_lines(
+                  data = dds,
+                  x    = if (identical(input$xvar, "TIMESTAMP_START")) dds$ts_view else dds[[input$xvar]],
+                  y    = ~value,
+                  name = nm,
+                  inherit = FALSE,
+                  line  = list(width = input$line_lwd %||% 2,
+                               dash  = if (src=="A") "solid" else "dash",
+                               color = cols[[v]]),
+                  opacity = a,
+                  type = "scattergl"
+                )
+                if (isTRUE(input$line_show_points)) {
+                  p <- p %>% plotly::add_markers(
+                    data = dds,
+                    x    = if (identical(input$xvar, "TIMESTAMP_START")) dds$ts_view else dds[[input$xvar]],
+                    y    = ~value,
+                    name = paste0(nm, " pts"),
+                    showlegend = FALSE,
+                    marker = list(size = 6, color = cols[[v]], opacity = 0.001),
+                    type = "scattergl"
+                  )
+                }
+              } else {
+                p <- p %>% plotly::add_markers(
+                  data = dds,
+                  x    = if (identical(input$xvar, "TIMESTAMP_START")) dds$ts_view else dds[[input$xvar]],
+                  y    = ~value,
+                  key  = paste0(dds$ts_str, "||", v),
+                  name = nm,
+                  inherit = FALSE,
+                  marker = list(
+                    symbol = if (src=="A") "circle" else "diamond",
+                    size   = input$overlay_size %||% 6,
+                    opacity = a,
+                    color  = cols[[v]]
+                  ),
+                  type = "scattergl"   # <-- belongs here (not inside marker)
+              )
+              }
+            }
+          }
+        }
+      } else { # compare_style == "dscolor": color by dataset; iterate (var, src)
+        cols_ds <- ds_cols()   # A/B from pickers
+        for (v in vars_plot) {
+          for (src in c("A","B")) {
+            dds <- dd[dd$variable == v & dd$source == src, , drop = FALSE]
+            if (!nrow(dds)) next
+            nm <- paste0(v, " — ", labsrc[[src]])  # e.g., "TA — Dataset A"
 
 
-  df0 <- df_by_year()
-  req(df0, input$xvar, input$yvar)
+            if (!only_smooth) {
+              if (geom == "line") {
+              p <- p %>% plotly::add_lines(
+                data = dds,
+                x    = if (identical(input$xvar, "TIMESTAMP_START")) dds$ts_view else dds[[input$xvar]],
+                y    = ~value,
+                name = nm,
+                legendgroup = src,                    # group legend by dataset
+                inherit = FALSE,
+                line  = list(width = input$line_lwd %||% 2, color = cols_ds[[src]]),
+                opacity = a,
+                type = "scattergl"      # keep lines WebGL too
+              )
+              if (isTRUE(input$line_show_points)) {
+                p <- p %>% plotly::add_markers(
+                  data = dds,
+                  x    = if (identical(input$xvar, "TIMESTAMP_START")) dds$ts_view else dds[[input$xvar]],
+                  y    = ~value,
+                  name = paste0(nm, " pts"),
+                  legendgroup = src,
+                  showlegend = FALSE,
+                  marker = list(size = 6, color = cols_ds[[src]], opacity = 0.001),
+                  type = "scattergl"      # keep lines WebGL too
+                )
+              }
+            } else {
+              p <- p %>% plotly::add_markers(
+                data = dds,
+                x    = if (identical(input$xvar, "TIMESTAMP_START")) dds$ts_view else dds[[input$xvar]],
+                y    = ~value,
+                key  = paste0(dds$ts_str, "||", v),
+                name = nm,
+                legendgroup = src,
+                inherit = FALSE,
+                marker = list(
+                  size = input$overlay_size %||% 6,
+                  opacity = a,
+                  color = cols_ds[[src]],
+                  symbol = if (src == "A") "circle" else "diamond" , # shape per dataset
+                  type = "scattergl"      # keep lines WebGL too
+                )
+              )
+            }
+            }
 
-  overlay_on <- isTRUE(input$overlay_mode) && length(input$overlay_vars)
+            # Smoother per (v, src)
+            if (isTRUE(input$show_smooth)) {
+              p <- add_smoother_layer(
+                p, dds,
+                xcol = if (identical(input$xvar, "TIMESTAMP_START")) "TIMESTAMP_START" else input$xvar,
+                ycol = "value",
+                col_hex     = cols_ds[[src]],
+                name_prefix = nm,
+                lwd         = input$smooth_lwd   %||% 3,
+                line_alpha  = input$smooth_alpha %||% 0.6,
+                show_ci     = isTRUE(input$smooth_show_ci)
+              )
 
-  # ── Overlay mode ────────────────────────────────────────────────────────────
-  if (overlay_on) {
-    df <- df0
-    if (identical(input$xvar, "TIMESTAMP_START")) df$ts_view <- df$TIMESTAMP_START + data_off_hr()*3600
-    vars_plot <- unique(c(if (isTRUE(input$overlay_include_y)) input$yvar, input$overlay_vars))
+            }
+          }
+        }
+      }
+
+
+      p <- p %>% plotly::layout(
+        legend = list(
+          itemclick      = "toggleothers",
+          itemdoubleclick= "toggle",
+          orientation    = "h",        # horizontal legend
+          x = 0.5, xanchor = "center", # centered
+          y = -0.2, yanchor = "top"    # below plot area
+        ),
+        autosize = TRUE, dragmode = "select", font = list(size = 18),
+        margin = list(l=80,r=20,b=80,t=20),
+        xaxis = list(
+          type = if (identical(input$xvar, "TIMESTAMP_START")) "date" else "-",
+          tickformat = if (identical(input$xvar, "TIMESTAMP_START")) "%b %d, %Y %H:%M" else NULL,
+          title = x_title_with_phase(), title_standoff = 10, tickfont = list(size = 12)
+        ),
+        yaxis = list(title = paste(vars_plot, collapse = ", "))
+      )
+
+      if (isTRUE(input$dark_mode)) {
+        p <- p %>% plotly::layout(template = "plotly_dark",
+                                  paper_bgcolor="#2E2E2E", plot_bgcolor="#2E2E2E",
+                                  font = list(color="white"))
+      }
+
+      return(plotly::toWebGL(p))
+    }
+    # ─────────── end compare branch ───────────
+
+    overlay_on <- isTRUE(input$overlay_mode) && length(input$overlay_vars)
+
+    # ───────────────────────── Overlay mode ─────────────────────────
+    if (overlay_on) {
+      df <- df0
+      if (identical(input$xvar, "TIMESTAMP_START"))
+        df$ts_view <- df$TIMESTAMP_START + data_off_hr()*3600
+
+      vars_plot <- unique(c(if (isTRUE(input$overlay_include_y)) input$yvar, input$overlay_vars))
+      p <- plotly::plot_ly(source = "qc_plot") %>% plotly::event_register("plotly_selected")
+
+      all_num <- names(df %>% dplyr::select(-TIMESTAMP_START, -raw_ts, -ts_str, -.row) %>% dplyr::select(where(is.numeric)))
+      cmap    <- setNames(pal_overlay(length(all_num)), all_num)
+      # AFTER (only for vars we’re plotting)
+      cols  <- setNames(pal_overlay(length(vars_plot)), vars_plot)
+      if (isTRUE(input$enable_var_colors)) {
+        for (v in names(cols)) {
+          if (!is.null(var_colors[[v]])) cols[[v]] <- var_colors[[v]]
+        }
+      }
+
+
+      fcols <- flag_cols_for(vars_plot, cols, flag_scheme())
+
+      s  <- input$overlay_size  %||% 6
+      fs <- input$flag_size     %||% (s + 2)
+
+      for (v in vars_plot) {
+        dd <- dplyr::filter(df, !is.na(.data[[v]]), !is.na(.data[[input$xvar]]))
+        if (!NROW(dd)) next
+
+        x_base <- if (identical(input$xvar, "TIMESTAMP_START")) dd$ts_view else dd[[input$xvar]]
+        ts_v   <- removed_ts[[v]] %||% character()
+
+        # Base layer (scatter or line), excluding flagged
+        dd_base <- if (length(ts_v)) dd[!(dd$ts_str %in% ts_v), , drop = FALSE] else dd
+
+        if (!only_smooth && NROW(dd_base)) {
+          if (geom == "line") {
+            p <- p %>% plotly::add_lines(
+              data = dd_base, x_for(dd_base), y = dd_base[[v]],
+              name = v, inherit = FALSE, opacity = a,
+              line  = list(width = input$line_lwd %||% 2, color = unname(cols[[v]])),
+              type  = "scattergl"
+
+            )
+            if (isTRUE(input$line_show_points)) {
+              p <- p %>% plotly::add_markers(
+                data = dd_base, x_for(dd_base), y = dd_base[[v]],
+                key = paste(dd_base$ts_str, v, sep = "||"),
+                inherit = FALSE, showlegend = FALSE, hoverinfo = "skip",
+                marker = list(size = 6, color = unname(cols[[v]]), opacity = 0.001),
+                type   = "scattergl"
+              )
+            }
+          } else {
+            p <- p %>% plotly::add_markers(
+              data = dd_base, x_for(dd_base), y = dd_base[[v]],
+              key = paste(dd_base$ts_str, v, sep = "||"),
+              name = v, inherit = FALSE,
+              marker = list(
+                symbol = if (isTRUE(input$overlay_hollow)) "circle-open" else "circle",
+                size   = s, opacity = a, color = cols[[v]],
+                line   = list(width = if (isTRUE(input$overlay_hollow)) 1.5 else 0)
+              ),
+              type = "scattergl"
+            )
+          }
+        }
+
+        # Flag rings
+        if (!only_smooth && length(ts_v)) {
+          dd_flag <- dd[dd$ts_str %in% ts_v, , drop = FALSE]
+          x_flag  <- if (identical(input$xvar, "TIMESTAMP_START")) dd_flag$ts_view else dd_flag[[input$xvar]]
+          p <- p %>% plotly::add_markers(
+            data = dd_flag, x = x_flag, y = dd_flag[[v]],
+            key = paste(dd_flag$ts_str, v, sep = "||"),
+            name = paste0(v, " (flagged)"),
+            legendgroup = v, showlegend = FALSE, inherit = FALSE, hoverinfo = "x+y+name",
+            marker = list(
+              symbol = "circle-open", size = fs,
+              color = hex_to_rgba(fcols[[v]], RING_ALPHA),
+              line  = list(width = RING_LINE_WIDTH)
+            )
+          )
+        }
+
+        # Optional smoother
+        if (isTRUE(input$show_smooth)) {
+          p <- add_smoother_layer(
+            p, dd,
+            xcol = if (identical(input$xvar, "TIMESTAMP_START")) "TIMESTAMP_START" else input$xvar,
+            ycol = v,
+            col_hex     = cols[[v]],
+            name_prefix = v,
+            lwd         = input$smooth_lwd %||% 3,
+            line_alpha  = input$smooth_alpha %||% 0.6,
+            show_ci     = isTRUE(input$smooth_show_ci)
+          )
+        }
+      }
+
+      p <- p %>% plotly::layout(
+        legend = list(
+          itemclick      = "toggleothers",
+          itemdoubleclick= "toggle",
+          orientation    = "h",        # horizontal legend
+          x = 0.5, xanchor = "center", # centered
+          y = -0.2, yanchor = "top"    # below plot area
+        ),
+        #legend = list(itemclick = "toggleothers", itemdoubleclick = "toggle"),
+        autosize = TRUE, dragmode = "select", font = list(size = 18),
+        margin = list(l = 80, r = 20, b = 80, t = 20),
+        xaxis = list(
+          type = if (identical(input$xvar, "TIMESTAMP_START")) "date" else "-",
+          tickformat = if (identical(input$xvar, "TIMESTAMP_START")) "%b %d, %Y %H:%M" else NULL,
+          title = x_title_with_phase(),        # << string, not a list
+          title_standoff = 10,                 # << put standoff here
+          tickfont = list(size = 12)
+        ),
+        yaxis = list(title = "Overlayed variables")
+      )
+
+      if (isTRUE(input$dark_mode)) {
+        p <- p %>% plotly::layout(template = "plotly_dark",
+                                  paper_bgcolor = "#2E2E2E", plot_bgcolor = "#2E2E2E",
+                                  font = list(color = "white"))
+      }
+
+      # force WebGL for performance when many points
+      p <- plotly::toWebGL(p)
+
+      return(p)
+    }
+
+    # ─────────────────────── Single-variable mode ───────────────────────
+    v <- input$yvar
+    dd <- dplyr::filter(df0, !is.na(.data[[v]]), !is.na(.data[[input$xvar]]))
+
+    if (identical(input$xvar, "TIMESTAMP_START")) dd$ts_view <- dd$TIMESTAMP_START + data_off_hr()*3600
+    x_base <- if (identical(input$xvar, "TIMESTAMP_START")) dd$ts_view else dd[[input$xvar]]
+
+    base_col <- y_base_color()
+    fcol <- switch(input$flag_color_scheme %||% "match_dark",
+                   yellow      = "#FFC20A",
+                   match_dark  = darken_hex(base_col, .50),
+                   match_light = tint_hex(base_col,  .60),
+                   darken_hex(base_col, .50))
+
+    s  <- input$overlay_size  %||% 6
+    fs <- input$flag_size     %||% (s + 2)
+    ts_v <- removed_ts[[v]] %||% character()
 
     p <- plotly::plot_ly(source = "qc_plot") %>% plotly::event_register("plotly_selected")
 
+    # Base (exclude flagged)
+    dd_base <- if (length(ts_v)) dd[!(dd$ts_str %in% ts_v), , drop = FALSE] else dd
+    if (NROW(dd_base)) {
+      if (!only_smooth) {
+        if (geom == "line") {
+          p <- p %>% plotly::add_lines(
+            data = dd_base, x_for(dd_base), y = dd_base[[v]],
+            name = v, inherit = FALSE, opacity = a,
+            type = "scattergl",
+            #line  = list(width = input$line_lwd %||% 2, color = unname(cols[[v]]))
+            line  = list(width = input$line_lwd %||% 2, color = base_col)
 
-    # base colors and flag partner colors
-    cols  <- pal_overlay(length(vars_plot)); names(cols) <- vars_plot
-    fcols <- flag_cols_for(vars_plot, cols, flag_scheme())  # ← uses auto “pairs” for cb palettes
-
-    s <- input$overlay_size  %||% 6
-    #a <- input$overlay_alpha %||% 0.6
-    fs <- input$flag_size    %||% (s + 2)  # ← same size by default, adjustable
-
-    for (v in vars_plot) {
-      # data for this variable
-      dd <- dplyr::filter(df, !is.na(.data[[v]]), !is.na(.data[[input$xvar]]))
-      if (!NROW(dd)) next
-      xvec <- if (identical(input$xvar, "TIMESTAMP_START")) dd$ts_view else dd[[input$xvar]]
-
-      # timestamps flagged for THIS var
-      ts_v <- removed_ts[[v]] %||% character()
-
-      # 1) base points EXCLUDING flagged ones (prevents the “blob” effect)
-      if (length(ts_v)) {
-        dd_base <- dd[!(dd$ts_str %in% ts_v), , drop = FALSE]
-      } else {
-        dd_base <- dd
-      }
-      # base (unflagged) points
-      if (NROW(dd_base)) {
-        x_base <- if (identical(input$xvar, "TIMESTAMP_START")) dd_base$ts_view else dd_base[[input$xvar]]
-        p <- p %>% plotly::add_markers(
-          data = dd_base,
-          x = x_base, y = dd_base[[v]],
-          key = paste(dd_base$ts_str, v, sep = "||"),
-          name = v, inherit = FALSE,
-          marker = list(
-            symbol  = if (isTRUE(input$overlay_hollow)) "circle-open" else "circle",
-            size    = (input$overlay_size %||% 6),
-            opacity = POINT_ALPHA,
-            color   = cols[[v]],
-            line    = list(width = if (isTRUE(input$overlay_hollow)) 1.5 else 0)
+            #line = list(width = input$line_lwd %||% 2, color = base_col)
           )
-        )
-      }
-
-      # flagged points as hollow rings (same x/y, flag color)
-      if (length(ts_v)) {
-        dd_flag <- dd[dd$ts_str %in% ts_v, , drop = FALSE]
-        x_flag  <- if (identical(input$xvar, "TIMESTAMP_START")) dd_flag$ts_view else dd_flag[[input$xvar]]
-        p <- p %>% plotly::add_markers(
-          data = dd_flag,
-          x = x_flag, y = dd_flag[[v]],
-          key = paste(dd_flag$ts_str, v, sep = "||"),
-          name = paste0(v, " (flagged)"),
-          legendgroup = v, showlegend = FALSE, inherit = FALSE, hoverinfo = "x+y+name",
-          marker = list(
-            symbol = "circle-open",
-            size   = (input$flag_size %||% ((input$overlay_size %||% 6) + RING_SIZE_EXTRA)),
-            color  = hex_to_rgba(fcols[[v]], RING_ALPHA),
-            line   = list(width = RING_LINE_WIDTH)
+          if (isTRUE(input$line_show_points)) {
+            p <- p %>% plotly::add_markers(
+              data = dd_base, x_for(dd_base), y = dd_base[[v]],
+              key = dd_base$ts_str,
+              inherit = FALSE, showlegend = FALSE, hoverinfo = "skip",
+              marker = list(size = 6, color = base_col, opacity = 0.001),
+              type = "scattergl"#, hoveron = "points"
+              #marker = list(size = 6, color = unname(cols[[v]]), opacity = 0.001)
+            )
+          }
+        } else {
+          p <- p %>% plotly::add_markers(
+            data = dd_base, x_for(dd_base), y = dd_base[[v]],
+            key = dd_base$ts_str,
+            name = v, inherit = FALSE,
+            marker = list(
+              symbol = if (isTRUE(input$overlay_hollow)) "circle-open" else "circle",
+              size   = s,
+              opacity = a,
+              color  = base_col,
+              line   = list(width = if (isTRUE(input$overlay_hollow)) 1.5 else 0)
+            ),
+            type = "scattergl"
           )
-        )
-      }
+        }
+        }
     }
 
+    # Flag rings
+    if (length(ts_v)) {
+      dd_flag <- dd[dd$ts_str %in% ts_v, , drop = FALSE]
+      p <- p %>% plotly::add_markers(
+        data = dd_flag,
+        x = if (identical(input$xvar, "TIMESTAMP_START")) dd_flag$ts_view else dd_flag[[input$xvar]],
+        y = dd_flag[[v]],
+        type = "scattergl",
+        #hoveron = "points",
+        key = dd_flag$ts_str,
+        name = paste0(v, " (flagged)"),
+        inherit = FALSE, showlegend = FALSE, hoverinfo = "x+y+name",
+        marker = list(symbol = "circle-open", size = fs,
+                      color  = hex_to_rgba(fcol, RING_ALPHA),
+                      line   = list(width = RING_LINE_WIDTH))
+      )
+    }
+
+    # Optional smoother (single var)
+    if (isTRUE(input$show_smooth)) {
+      p <- add_smoother_layer(
+        p, dd,
+        xcol = if (identical(input$xvar, "TIMESTAMP_START")) "TIMESTAMP_START" else input$xvar,
+        ycol = v,
+        col_hex     = base_col,
+        name_prefix = v,
+        lwd         = input$smooth_lwd %||% 3,
+        line_alpha  = input$smooth_alpha %||% 0.6,
+        show_ci     = isTRUE(input$smooth_show_ci)
+      )
+    }
 
     p <- p %>% plotly::layout(
-      legend = list(itemclick = "toggleothers", itemdoubleclick = "toggle"),
       autosize = TRUE, dragmode = "select", font = list(size = 18),
       margin = list(l = 80, r = 20, b = 80, t = 20),
-      xaxis = if (identical(input$xvar, "TIMESTAMP_START")) {
-        list(type = "date", tickformat = "%b %d\n%H:%M",
-             title = sprintf("TIMESTAMP_START (UTC%+d)", data_off_hr()))
-      } else list(title = input$xvar),
-      yaxis = list(title = "Overlayed variables")
+      xaxis = list(
+        type = if (identical(input$xvar, "TIMESTAMP_START")) "date" else "-",
+        tickformat = if (identical(input$xvar, "TIMESTAMP_START")) "%b %d, %Y %H:%M" else NULL,
+        title = x_title_with_phase(),        # << string, not a list
+        title_standoff = 10,                 # << put standoff here
+        tickfont = list(size = 12)
+      ),
+      yaxis = list(title = input$yvar)
     )
+
     if (isTRUE(input$dark_mode)) {
       p <- p %>% plotly::layout(template = "plotly_dark",
-                                paper_bgcolor = "#2E2E2E", plot_bgcolor  = "#2E2E2E", font = list(color = "white"))
+                                paper_bgcolor = "#2E2E2E", plot_bgcolor = "#2E2E2E",
+                                font = list(color = "white"))
     }
-    return(p)
-  }
 
-  # ── Single-variable mode ───────────────────
-  df_filtered <- df0 %>%
-    dplyr::filter(!is.na(.data[[input$xvar]]), !is.na(.data[[input$yvar]]))
-
-  if (nrow(df_filtered) >= 2) {
-    fit0 <- lm(reformulate(input$xvar, input$yvar), data = df_filtered)
-    dfc <- df_filtered %>%
-      mutate(
-        fitted = predict(fit0, newdata = .),
-        resid  = .data[[input$yvar]] - fitted,
-        sigma  = sd(resid, na.rm = TRUE),
-        flag   = if_else(abs(resid) > input$sd_thresh * sigma, "outlier", "inlier")
-      )
-  } else {
-    # Not enough data to fit a model → plot raw points without outlier logic
-    dfc <- df_filtered %>%
-      mutate(fitted = NA_real_, resid = NA_real_, sigma = NA_real_, flag = NA_character_)
-  }
-
-  #marker_blue <- if (isTRUE(input$dark_mode)) "#1F62FF" else "#1F449C"
-  marker_blue <- y_base_color()
+    p
+  })
 
 
-  if (identical(input$xvar, "TIMESTAMP_START")) {
-    dfc$ts_view <- dfc$TIMESTAMP_START + data_off_hr()*3600
-  }
-
-  # NEW: exclude selected rows from the filled base layer
-  df_base <- dfc[ !(dfc$.row %in% sel_keys()), , drop = FALSE ]
-
-  p <- plotly::plot_ly(
-    data   = df_base,   # ← CHANGED from dfc
-    x      = if (identical(input$xvar, "TIMESTAMP_START")) ~ts_view else ~.data[[input$xvar]],
-    y      = ~.data[[input$yvar]],
-    key    = ~ts_str,
-    source = "qc_plot",
-    mode   = "markers",
-    type   = "scatter",
-    marker = list(
-      size    = input$overlay_size  %||% 6,
-      opacity = POINT_ALPHA,
-      color   = marker_blue,
-      line    = list(width = if (isTRUE(input$overlay_hollow)) 1.5 else 0)
-    ),
-    symbol = if (isTRUE(input$overlay_hollow)) I("circle-open") else I("circle")
-  ) %>% plotly::event_register("plotly_selected")
-
-  if (input$sd_thresh > 0) {
-    p <- p %>% plotly::add_trace(
-      data = dplyr::filter(dfc, flag == "outlier"),
-      x    = if (identical(input$xvar, "TIMESTAMP_START")) ~ts_view else ~.data[[input$xvar]],
-      y    = ~.data[[input$yvar]],
-      mode = "markers",
-      type = "scatter",
-      marker = list(
-        size    = input$overlay_size  %||% 6,
-        opacity = POINT_ALPHA,
-        color   = "#F05039"
-      ),
-      showlegend = FALSE
-    )
-  }
-
-  if (length(sel_keys()) > 0) {
-    df_flag1 <- dplyr::filter(dfc, .row %in% sel_keys())
-    xcol_nm  <- if (identical(input$xvar, "TIMESTAMP_START")) "ts_view" else input$xvar
-
-    # ring color derived from the current base color and the chosen scheme
-    flag_col_single <- switch(input$flag_color_scheme %||% "match_dark",
-                              yellow      = "#FFC20A",
-                              match_dark  = darken_hex(marker_blue, .50),
-                              match_light = tint_hex(marker_blue,  .60)#,
-                              #accessible  = contrast_pairs()[1, 2]
-    )
-
-    fs <- (input$flag_size %||% ((input$overlay_size %||% 6) + RING_SIZE_EXTRA))
-
-    p <- p %>% plotly::add_markers(
-      data = df_flag1,
-      x = df_flag1[[xcol_nm]],
-      y = df_flag1[[input$yvar]],
-      inherit = FALSE, showlegend = FALSE, hoverinfo = "x+y+name",
-      marker = list(
-        symbol = "circle-open",
-        size   = fs,
-        color  = hex_to_rgba(flag_col_single, RING_ALPHA),
-        line   = list(width = RING_LINE_WIDTH)
-      )
-    )
-  }
-
-
-  if (isTRUE(input$dark_mode)) {
-    p <- p %>% plotly::layout(
-      template = "plotly_dark",
-      paper_bgcolor = "#2E2E2E",
-      plot_bgcolor  = "#2E2E2E",
-      font = list(color = "white")
-    )
-  }
-
-  if (input$show_reg && input$xvar != "TIMESTAMP_START") {
-    # R² (all points)
-    df_all <- df0 %>% dplyr::filter(!is.na(.data[[input$xvar]]), !is.na(.data[[input$yvar]]))
-    if (nrow(df_all) >= 2) {
-      fit_all <- lm(reformulate(input$xvar, input$yvar), data = df_all)
-      r2_all  <- round(summary(fit_all)$r.squared, 2)
-      xseq_all <- seq(min(df_all[[input$xvar]], na.rm = TRUE),
-                      max(df_all[[input$xvar]], na.rm = TRUE), length.out = 100)
-      preds_all <- predict(fit_all, newdata = setNames(data.frame(xseq_all), input$xvar))
-      r2_bg_all <- if (isTRUE(input$dark_mode)) "#F52100" else "#FFBAAF"
-      r2_bg_sel <- if (isTRUE(input$dark_mode)) "#B87700" else "#FFC65C"
-
-      p <- p %>%
-        plotly::add_lines(x = xseq_all, y = preds_all, inherit = FALSE,
-                          line = list(color = "black", width = 8), showlegend = FALSE) %>%
-        plotly::add_lines(x = xseq_all, y = preds_all, inherit = FALSE,
-                          line = list(color = r2_bg_all, width = 6), showlegend = FALSE) %>%
-        plotly::add_annotations(
-          xref="paper", yref="paper", x=0.02, y=1.00, xanchor="left", yanchor="bottom",
-          text=paste0("<b>R² (all points) = ", r2_all, "</b>"),
-          showarrow=FALSE, font=list(size=18), borderpad=6, borderwidth=1.5, yshift=-18,
-          bgcolor=r2_bg_all,
-          bordercolor = if (isTRUE(input$dark_mode)) "#EEE" else "black"
-        )
-
-      # R² with “accumulated” dropped
-      acc_sel <- isolate(sel_keys())
-      if (length(acc_sel) > 0) {
-        df_drop_sel <- df_all %>% dplyr::filter(!(.row %in% acc_sel))
-        r2_sel <- if (nrow(df_drop_sel) >= 2)
-          round(summary(lm(reformulate(input$xvar, input$yvar), data = df_drop_sel))$r.squared, 2) else NA_real_
-        p <- p %>% plotly::add_annotations(
-          xref="paper", yref="paper", x=0.02, y=0.96, xanchor="left", yanchor="bottom",
-          text=paste0("<b>R² (sel dropped) = ", r2_sel, "</b>"),
-          showarrow=FALSE, font=list(size=18), borderpad=6, borderwidth=1.5, yshift=-26,
-          bgcolor=r2_bg_sel,
-          bordercolor = if (isTRUE(input$dark_mode)) "#EEE" else "black"
-        )
-      }
-    }
-  }
-
-  p %>% plotly::layout(
-    autosize = TRUE,
-    dragmode = "select",
-    font   = list(size = 18),
-    margin = list(l = 80, r = 20, b = 80, t = 20),
-    xaxis = if (input$xvar == "TIMESTAMP_START") {
-      list(type = "date",
-           tickformat = "%b %d\n%H:%M",
-           title = sprintf("TIMESTAMP_START (UTC%+d)", data_off_hr()))
-    } else list(title = input$xvar),
-    yaxis = list(title = input$yvar)
-  )
-})
 
   output$preview <- renderTable({
     ts <- selected_ts()
@@ -2191,7 +3010,7 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
     df
   })
 
-  #UTC helper
+  #UTC helper----
   # put near your other helpers
   # Map offsets to friendlier labels
   pretty_tz_label <- function(h) {
@@ -2265,10 +3084,19 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
   time_rng_raw <- reactive({ input$time_rng })
   time_rng_debounced <- debounce(time_rng_raw, 150)   # 150–250ms feels snappy
 
+  #smooth only
+  observeEvent(input$only_smooth, {
+    if (isTRUE(input$only_smooth) && !isTRUE(input$show_smooth)) {
+      updateCheckboxInput(session, "show_smooth", TRUE)
+    }
+  })
+
+
   # Replace your existing is_snapping/observeEvent(input$time_rng, ...) with this:
   observeEvent(time_rng_debounced(), ignoreInit = TRUE, {
     df <- df_by_year(); req(df)
     pool <- sort(unique(df$TIMESTAMP_START[ rows_for_time(df) ]))
+    pool <- pool[is.finite(as.numeric(pool))]
     if (length(pool) < 2) return()
 
     tr   <- time_rng_debounced()
@@ -2291,8 +3119,8 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
   # helper once
   snap_to_pool <- function(x, pool) pool[ which.min(abs(as.numeric(pool) - as.numeric(x))) ]
 
-#   ──────────────────────────────────────────────────────────────────
-  # DOWNLOAD HANDLER for “Download cleaned CSV”
+  #   ──────────────────────────────────────────────────────────────────
+  # DOWNLOAD HANDLER for “Download cleaned CSV”----
   # ────────────────────────────────────────────────────────────────────────────
   output$download_data <- downloadHandler(
     filename = function() paste0("fluxtools_", Sys.Date(), ".zip"),
@@ -2495,7 +3323,7 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
       removed_ts[[v]] <- setdiff(old, unique(byv[[v]]))
     }
   })
-#slider fix
+  #slider fix
   observeEvent(input$start_dt, {
     df <- df_by_year(); req(df, input$start_dt)
     pool <- sort(unique(df$TIMESTAMP_START[ rows_for_time(df) ])); if (!length(pool)) return()
@@ -2564,11 +3392,14 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
     rv$df <- tmp
 
     showNotification(
-      sprintf("Applied removals: %d timestamp%s across %d variable%s.",
-              total_tses, if (total_tses == 1) "" else "s",
-              length(vars_all), if (length(vars_all) == 1) "" else "s"),
+      sprintf(
+        "Applied removals: %d timestamp%s across %d variable%s.",
+        total_tses, (if (total_tses == 1) "" else "s"),
+        length(vars_all), (if (length(vars_all) == 1) "" else "s")
+      ),
       type = "message", duration = 3
     )
+
 
     sel_keys(integer(0)); outlier_keys(integer(0)); session$resetBrush("qc_plot")
   })
@@ -2588,4 +3419,31 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
   })
 }
 
+# Main panel (define this before assembling the UI)
+main_content <- mainPanel(
+  width = 8,
+  plotlyOutput("qc_plot", width = "100%", height = "80vh")
+)
+
+
+#assemble the UI----
+ui <- fluidPage(
+  style = "height:100vh; overflow:hidden;",
+  theme = light_theme,
+
+  head_assets,
+  title_bar,
+  subtitle_bar,
+
+  sidebarLayout(
+    sidebar_controls,
+    main_content
+  )                    # closes sidebarLayout
+)                      # closes fluidPage
+
+
+
+
+
+#run app----
 shinyApp(ui, server)
