@@ -1,15 +1,5 @@
 #Fluxtools code
-
-#UPDATES (9/2025)
-# - [X]  add  line (instead of scatterplot) option
-# - [X]  add smoothed line option (with options for how smoothed with loess)
-# - [X]  add overlay option, for line or smooth on top of scatterplot (or line) with opacity feature
-# - [X]  time filter (allow for night vs day); Bonus: If time picked is between 6am and 8pm, have a sun icon pop up, or a moon during 8pm to 6am
-# - [X]  Select months (similar to select years) or specific day (subset plots to these timeframes)
-# - [X]  how to assign colors for each variable without being a huge pain
-# - [X]  two data comparison option? this would allow the user to upload a second dataset
-# the goal for second dataset is for data comparison, not necessarily flagging! is there a good way to do this?
-#Flags work in comparison mode but only for dataset 1!
+#V0.7.0
 
 #Packages
 library(shiny)
