@@ -14,6 +14,8 @@
 #Getting errors... unsure this is worth it
 #UTC stuff - not sure this is being done correctly. takes raw data and -5 for UTC-5 when data is already in  eastern timezone. hrm...
 
+
+
 # - [ ]  how to assign colors for each variable without being a huge pain
 # - [ ]  two data comparison option? this would allow the user to upload a second dataset. but I fear this will be really complicated given all the options?
 # the goal for second dataset is for data comparison, not necessarily flagging! is there a good way to do this?
