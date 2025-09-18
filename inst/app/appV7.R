@@ -1,37 +1,6 @@
-#wont run
-#syntax error
-# Error in parse(file, keep.source = FALSE, srcfile = src, encoding = enc) :
-#   E:/Github/fluxtools/inst/app/appV6b.R:904:9: unexpected symbol
-# 903: #main panel----
-# 904:         mainPanel
-# ^
-#   Possible extra comma at:
-#   863:        ),  # ← closes the code panel (this comma is OK)
-# ^
-#   Possible missing comma at:
-#   904:        mainPanel(
-#     ^
-#       Possible missing comma at:
-#       942:      if (day_on) "☀" else NULL, #☀
-#     ^
+#Fluxtools code
 
-#Can we organize the code to help with these issues?
-
-# - [ ]  add  line (instead of scatterplot) option
-# - [ ]  add smoothed line option (with options for how smoothed with lm)
-# - [ ]  add overlay option, for line or smooth on top of scatterplot (or line) with opacity feature
-# - [ ]  how to assign colors for each variable without being a huge pain
-#SUPER ADVANCED: - [ ]  two data comparison option? this would allow the user to upload a second dataset. but I fear this will be really complicated given all the options?
-
-#time subset!
-##TESTING THIS
-# - [X]  time filter (allow for night vs day);
-#(Bonus: If time picked is between 6am and 8pm, have a sun icon pop up on the top left of the plot, or a moon during 8pm to 6am)
-#^ this didnt work so its in the x-axis title now
-# - [ ]  let's make icons look nicer - how to do this?
-# - [X]  Select months (similar to select years) or specific day (subset plots to these timeframes)
-
-
+#Packages
 library(shiny)
 library(plotly)
 library(dplyr)
@@ -39,72 +8,65 @@ library(bslib)     # for theming
 library(shinyWidgets) #for time selector
 library(readr)
 
+#File Size Limit
 # Allow larger uploads (here: up to 1gb)
-options(shiny.maxRequestSize = 1024 * 1024 * 1024) #1gb
+options(shiny.maxRequestSize = 1024 * 1024 * 1024)
 
-# 1) Theme ──────────────────────────────────────────────────----
+#Theme----
 light_theme <- bs_theme(
   bootswatch = "cerulean",
-  base_font_size  = "14px",    # ← bump this up (default is 14px)
-  font_scale      = 1        # ← or scale everything to 120%
+  base_font_size  = "14px",
+  font_scale      = 1
 )
 
 dark_theme <- bs_theme(
   version        = 5,
   bootswatch     = "slate",
-  base_font_size  = "14px",    # ← bump this up (default is 14px)
-  font_scale      = 1,        # ← or scale everything to 120%
+  base_font_size  = "14px",
+  font_scale      = 1,
   fg             = "#EEE",
   bg             = "#222",
   input_bg       = "#333",
-  input_fg       = "#EEE"#,
+  input_fg       = "#EEE"
 )
 
 #UI----
-ui <- fluidPage(
-  style = "height:100vh; overflow:hidden;",
-  theme = light_theme,
-
-  tags$head(
-    tags$style(HTML("
+#<head> assets in one object
+head_assets <- tags$head(
+  # ⬇️ paste your exact tags$style / tags$script blocks here
+  tags$style(HTML("
   /* shrink tables inside modals + PRM help */
-  #help_prm_table, #prm_summary_tbl, .modal-body table {
-    font-size: 0.8rem;
-  }
+  #help_prm_table, #prm_summary_tbl, .modal-body table { font-size: 0.8rem; }
   /* wrap tables so they scroll instead of overflowing */
   .table-wrap { max-width:100%; overflow-x:auto; }
 ")),
-
-    tags$style(HTML('
-
+  tags$style(HTML('
      /* Slightly smaller, grayscale icons by default; restore on hover/focus */
-  .btn .fa, .btn .bi,
-  .accordion-button .fa, .accordion-button .bi,
-  summary .fa, summary .bi {
+    .btn .fa, .btn .bi,
+    .accordion-button .fa, .accordion-button .bi,
+    summary .fa, summary .bi {
     font-size: 0.95em;
     filter: grayscale(100%);
     opacity: .85;
     transition: filter .15s ease, opacity .15s ease, transform .15s ease;
-  }
-  .btn:hover .fa, .btn:focus .fa,
-  .btn:hover .bi, .btn:focus .bi,
-  .accordion-button:hover .fa, .accordion-button:focus .fa,
-  .accordion-button:hover .bi, .accordion-button:focus .bi,
-  summary:hover .fa, summary:focus .fa,
-  summary:hover .bi, summary:focus .bi {
-    filter: none;
-    opacity: 1;
-  }
+    }
+    .btn:hover .fa, .btn:focus .fa,
+    .btn:hover .bi, .btn:focus .bi,
+    .accordion-button:hover .fa, .accordion-button:focus .fa,
+    .accordion-button:hover .bi, .accordion-button:focus .bi,
+    summary:hover .fa, summary:focus .fa,
+    summary:hover .bi, summary:focus .bi {
+      filter: none;
+      opacity: 1;
+    }
+    /* Also trim icon padding so they feel tighter */
+    .btn .fa, .btn .bi { margin-right: .4rem; }
 
-  /* Also trim icon padding so they feel tighter */
-  .btn .fa, .btn .bi { margin-right: .4rem; }
-
-  /* Optional: make icon-only links (like the ? help) a touch smaller */
-  .navbar .fa, .navbar .bi,
-  .title-panel .fa, .title-panel .bi {
-    font-size: 0.9em;
-  }
-
+    /* Optional: make icon-only links (like the ? help) a touch smaller */
+    .navbar .fa, .navbar .bi,
+    .title-panel .fa, .title-panel .bi {
+      font-size: 0.9em;
+    }
           .swatch-row { display:flex; align-items:center; gap:.5rem; margin:.25rem 0; }
       .sw { width:14px; height:14px; border-radius:50%; display:inline-block;
             border:1px solid rgba(0,0,0,.25); }
@@ -133,27 +95,23 @@ ui <- fluidPage(
       .accordion-button .fa, .accordion-button .bi { margin-right:.5rem; }
       .accordion-body { background: var(--bs-body-bg); padding: 1rem 1.25rem; }
       html[data-bs-theme="slate"] .accordion > .accordion-item { border-color:#444; box-shadow:0 .25rem .75rem rgba(0,0,0,.25); }
-    ')),
+                  ')),
+  tags$script(HTML("
+    document.addEventListener('keydown', function(e){
+      // when focus is inside the Selectize control for prm_families
+      var wrap = document.querySelector('#prm_families + .selectize-control');
+      if (!wrap) return;
+      var hasFocus = wrap.contains(document.activeElement);
+      if (hasFocus && e.key === 'Enter') {
+        var btn = document.getElementById('apply_prm_btn');
+        if (btn) btn.click();
+      }
+    });
+    ")),
 
 
-
-
-tags$script(HTML("
-document.addEventListener('keydown', function(e){
-  // when focus is inside the Selectize control for prm_families
-  var wrap = document.querySelector('#prm_families + .selectize-control');
-  if (!wrap) return;
-  var hasFocus = wrap.contains(document.activeElement);
-  if (hasFocus && e.key === 'Enter') {
-    var btn = document.getElementById('apply_prm_btn');
-    if (btn) btn.click();
-  }
-});
-")),
-
-    tags$script(HTML("
-
-  function initTooltips(root){
+  tags$script(HTML("
+    function initTooltips(root){
     root = root || document;
     var els = [].slice.call(root.querySelectorAll('[data-bs-toggle=\"tooltip\"]'));
     els.forEach(function(el){
@@ -192,8 +150,7 @@ document.addEventListener('keydown', function(e){
     }
   }).observe(document.body, { childList: true, subtree: true });
 ")),
-
-    tags$script(HTML('
+  tags$script(HTML('
   Shiny.addCustomMessageHandler("updateTooltip", function(x){
     var el = document.getElementById(x.id);
     if(!el) return;
@@ -219,7 +176,7 @@ document.addEventListener('keydown', function(e){
   });
 ')),
 
-    tags$script(HTML('
+  tags$script(HTML('
   function copyVisibleCode(){
     var which = document.querySelector("input[name=code_choice]:checked").value;
     var srcId = which==="current" ? "code_current" : "code_all";
@@ -237,690 +194,604 @@ document.addEventListener('keydown', function(e){
     if(btn) btn.onclick = copyVisibleCode;
   });
 '))
-),
+)
 
-#Titles and things----
-  titlePanel(
-    div(
-      "fluxtools: Interactive QA/QC with Code Generator",
-      actionLink("help", label = icon("question-circle"), style = "margin-left:10px;")
+#make tiny title + subtitle blocks----
+title_bar <- titlePanel(
+  div(
+    "fluxtools: Interactive QA/QC with Code Generator",
+    actionLink("help", label = icon("question-circle"), style = "margin-left:10px;")
+  )
+)
+
+subtitle_bar <- uiOutput("subtitle")
+
+
+#Side Panel ----
+sidebar_controls <- sidebarPanel(
+  width = 4,
+  style = "max-height: calc(100vh - 80px); overflow-y: auto;",
+
+  # Data Upload and Selection ----
+  tags$h5("Data upload and selection"),
+  fileInput("csv_file", "Upload Ameriflux‐style or Fluxnet .csv:", accept = ".csv"),
+
+  # UTC offset ----
+  bslib::accordion(
+    id = "advanced_tz_box",
+    open = "advanced",
+    bslib::accordion_panel(
+      title = tagList(icon("sliders-h"), "Set timezone"),
+      value = "advanced",
+      div(class = "mb-2 mt-2",
+          tags$label(
+            id    = "data_offset_label",
+            `for` = "data_offset",
+            "View TIMESTAMP_START in:",
+            'data-bs-toggle' = "tooltip",
+            title = "Fixed timestamp; no DST"
+          ),
+          selectInput(
+            "data_offset", label = NULL,
+            choices  = sprintf("UTC%+d", -12:14),
+            selected = "UTC+0", width = "100%"
+          ),
+          tags$small(class = "form-text text-muted fst-italic",
+                     "This only changes how times are shown in the app; exports keep original strings.")
+      ),
+      tags$details(
+        class = "mt-1",
+        tags$summary("Show timestamp parsing details"),
+        tags$pre(style = "margin-top:.5rem;", textOutput("tz_check"))
+      )
     )
-  ),  # ← comma was missing after this
+  ),
 
+  hr(),
 
-  uiOutput("subtitle"),
+  # Plot selection ----
+  tags$h5("Plot selection"),
+  fluidRow(
+    column(
+      6,
+      tags$label(`for` = "yvar", "Y-axis:", style  = "width:100%; font-weight:500;"),
+      tagAppendAttributes(
+        selectInput("yvar", NULL, choices = NULL, width = "100%"),
+        'data-bs-toggle' = "tooltip",
+        title = "Select your Y-axis variable — the column whose values will be set to NA"
+      )
+    ),
+    column(
+      6,
+      tags$label(`for` = "xvar", "X-axis:", style  = "width:100%; font-weight:500;"),
+      tagAppendAttributes(
+        selectInput("xvar", NULL, choices = NULL, width = "100%"),
+        'data-bs-toggle' = "tooltip",
+        title = "Select your X-axis variable"
+      )
+    )
+  ),
 
-sidebarLayout(
-  sidebarPanel(
-    style = "max-height: calc(100vh - 80px); overflow-y: auto;",
-    width = 4,
-
-  # sidebarLayout(
-  #   sidebarPanel(
-  #     style = "max-height: calc(100vh - 80px); overflow-y: auto;",
-  #     width = 4,
-
-      tags$h5("Data upload and selection"),
-      fileInput("csv_file", "Upload Ameriflux‐style or Fluxnet .csv:", accept = ".csv"),
-
-      # --- UTC select with tooltip on the label ---
-      bslib::accordion(
-        id = "advanced_tz_box",
-        open = "advanced",   # ← was FALSE
-        #open = FALSE,
-        bslib::accordion_panel(
-          title = tagList(icon("sliders-h"), "Set timezone"),
-          value = "advanced",  # <-- REQUIRED: unique character id
-
-      # tags$details(
-      #   # default is closed; omit or set open = FALSE
-      #   # open = FALSE,
-      #   tags$summary(HTML('<i class="fa fa-globe"></i> Set Timezone')),
-
-        # UTC select with tooltipbed label
-        div(class = "mb-2 mt-2",
-            tags$label(
-              id    = "data_offset_label",
-              `for` = "data_offset",
-              "View TIMESTAMP_START in:",
-              'data-bs-toggle' = "tooltip",
-              title = "Fixed timestamp; no DST"
-            ),
-            selectInput(
-              "data_offset", label = NULL,
-              choices  = sprintf("UTC%+d", -12:14),
-              selected = "UTC+0", width = "100%"
-            ),
-            tags$small(class = "form-text text-muted fst-italic",
-                       "This only changes how times are shown in the app; exports keep original strings.")
+  # Overlay mode ----
+  checkboxInput("overlay_mode", "Plot multiple variables", FALSE),
+  conditionalPanel(
+    "input.overlay_mode",
+    div(
+      class = "d-flex align-items-end gap-2",
+      div(
+        style="flex:1;",
+        selectizeInput(
+          "overlay_vars", "Overlay variables",
+          choices = NULL, multiple = TRUE,
+          options = list(placeholder = "Choose ≥1 variables",
+                         plugins = list("remove_button")),
+          width = "100%"
         ),
+        checkboxInput("overlay_include_y", "Include current y-variable", TRUE)
+      )
+    )
+  ),
 
-        # Nest the parsing details inside the same wrapper
-        tags$details(
-          class = "mt-1",
-          tags$summary("Show timestamp parsing details"),
-          tags$pre(style = "margin-top:.5rem;", textOutput("tz_check"))
+  # Advanced (style & markers) ----
+  bslib::accordion(
+    id = "advanced_flg_box",
+    open = FALSE,
+    bslib::accordion_panel(
+      title = tagList(icon("sliders-h"), "Advanced (flag style & markers)"),
+      value = "advanced",
+
+      tags$h5("Select Plot type (default: Scatterplot)"),
+
+      radioButtons(
+        "geom_mode", NULL,
+        choices  = c("Scatter" = "scatter", "Line" = "line"),
+        selected = "scatter",
+        inline   = TRUE
+      ),
+
+      sliderInput("overlay_alpha", "Point/line opacity",
+                  min = 0.1, max = 1, value = 0.70, step = 0.05),
+
+      # Scatter options
+      conditionalPanel(
+        "input.geom_mode == 'scatter'",
+        bslib::accordion(
+          id = "scatterplot_opt", open = FALSE,
+          bslib::accordion_panel(
+            title = tagList(icon("sliders-h"), "Scatter options"),
+            value = "scatter_opts",
+            tags$h5("Scatter options"),
+            sliderInput("overlay_size", "Point size",
+                        min = 1, max = 14, value = 6, step = 1),
+
+            checkboxInput("overlay_hollow", "Use hollow circles", TRUE)
+          )
+       )
+      ),
+
+      # Line options
+      conditionalPanel(
+        "input.geom_mode == 'line'",
+        bslib::accordion(
+          id = "line_opt", open = FALSE,
+          bslib::accordion_panel(
+            title = tagList(icon("sliders-h"), "Line options"),
+            value = "line_opts",
+            tags$h5("Line options"),
+            sliderInput("line_lwd", "Line width",
+                        min = 1, max = 8, value = 2, step = 1),
+            checkboxInput("line_show_points",
+                          "Add transparent points so lasso selection works (recommended)", TRUE)
+          )
         )
-      )),
+      ),
+
+      # Smoother overlay
+      bslib::accordion(
+        id = "smooth_opt", open = FALSE,
+        bslib::accordion_panel(
+          title = tagList(icon("chart-line"), "Smoother overlay"),
+          value = "smooth_opts",
+          checkboxInput("show_smooth", "Add smoothed line", FALSE),
+
+          conditionalPanel(
+            "input.show_smooth",
+            selectInput(
+              "smooth_method", "Method",
+              choices = c("Linear (lm)" = "lm", "LOESS (loess)" = "loess"),
+              selected = "lm"
+            ),
+            conditionalPanel(
+              "input.smooth_method == 'loess'",
+              sliderInput("smooth_span", "LOESS span", min = .05, max = 1, value = .4, step = .05)
+            ),
+            checkboxInput("smooth_show_ci", "Show 95% CI band", FALSE),
+            sliderInput("smooth_lwd",   "Smoother width",   min = 1, max = 8, value = 3,  step = 1),
+            sliderInput("smooth_alpha", "Smoother opacity", min = 0.1, max = 1, value = .6, step = .05)
+          )
+        )
+      ),
 
       hr(),
 
-      tags$h5("Plot selection"),
-      fluidRow(
-        column(
-          6,
-          tags$label(`for` = "yvar", "Y-axis:", style  = "width:100%; font-weight:500;"),
-          tagAppendAttributes(
-            selectInput("yvar", NULL, choices = NULL, width = "100%"),
-            'data-bs-toggle' = "tooltip",
-            title = "Select your Y-axis variable — the column whose values will be set to NA"
-          )
-        ),
-        column(
-          6,
-          tags$label(`for` = "xvar", "X-axis:", style  = "width:100%; font-weight:500;"),
+      tags$h5("Flag Options"),
+      sliderInput("flag_size", "Flag point size", min = 1, max = 14, value = 8, step = 1),
 
-          tagAppendAttributes(
-            selectInput("xvar", NULL, choices = NULL, width = "100%"),
-            'data-bs-toggle' = "tooltip",
-            title = "Select your X-axis variable"
-          )
-        )
-      ),
+      hr(),
 
-    # --- Overlay mode ---
-    checkboxInput("overlay_mode", "Plot multiple variables", FALSE),
-    conditionalPanel(
-      "input.overlay_mode",
-      div(
-        class = "d-flex align-items-end gap-2",
-        div(
-          style="flex:1;",
-          selectizeInput(
-            "overlay_vars", "Overlay variables",
-            choices = NULL, multiple = TRUE,
-            options = list(placeholder = "Choose ≥1 variables",
-                           plugins = list("remove_button")), #did i mess this up?
-            width = "100%"
-          ),
-          checkboxInput("overlay_include_y", "Include current y-variable", TRUE)
-        )  # ← no comma here either
-      )
-    ),   # this comma is OK (sidebarPanel still has more arguments after the panel)
-
-
-# Advanced: flag style & markers (applies to overlay and single-Y)
-bslib::accordion(
-  id = "advanced_flg_box",
-  open = FALSE,
-  #open = character(0),  # keep closed by default
-  bslib::accordion_panel(
-    title = tagList(icon("sliders-h"), "Advanced (flag style & markers)"),
-    value = "advanced",  # <-- REQUIRED: unique character id
-
-
-#TEST----
-tags$h5("Select Plot type (default: Scatterplot"),
-
-radioButtons(
-  "geom_mode", NULL,
-  choices  = c("Scatter" = "scatter", "Line" = "line"),
-  selected = "scatter",
-  inline   = TRUE
-),
-
-
-# Global opacity (applies to scatter points OR line)
-sliderInput("overlay_alpha", "Point/line opacity",
-            min = 0.1, max = 1, value = 0.70, step = 0.05),
-
-# --- Scatter options ----------------------------------------------------------
-conditionalPanel(
-  "input.geom_mode == 'scatter'",
-  bslib::accordion(
-    id = "scatterplot_opt", open = FALSE,
-    bslib::accordion_panel(
-      title = tagList(icon("sliders-h"), "Scatter options"),
-      value = "scatter_opts",
-      tags$h5("Scatter options"),
-      sliderInput("overlay_size", "Point size",
-                  min = 1, max = 14, value = 6, step = 1)
-    )
-  )
-),
-
-# --- Line options -------------------------------------------------------------
-conditionalPanel(
-  "input.geom_mode == 'line'",
-  bslib::accordion(
-    id = "line_opt", open = FALSE,
-    bslib::accordion_panel(
-      title = tagList(icon("sliders-h"), "Line options"),
-      value = "line_opts",   # ← must be unique
-      tags$h5("Line options"),
-      sliderInput("line_lwd", "Line width",
-                  min = 1, max = 8, value = 2, step = 1),
-      checkboxInput("line_show_points",
-                    "Add transparent points so lasso selection works (recommended)", TRUE)
-    )
-  )
-),
-
-# --- Smoother overlay (works with scatter or line) ----------------------------
-bslib::accordion(
-  id = "smooth_opt", open = FALSE,
-  bslib::accordion_panel(
-    title = tagList(icon("chart-line"), "Smoother overlay"),
-    value = "smooth_opts",
-    checkboxInput("show_smooth", "Add smoothed line", FALSE),
-
-    conditionalPanel(
-      "input.show_smooth",
+      # Color
+      tags$h5("Color"),
       selectInput(
-        "smooth_method", "Method",
-        choices = c("Linear (lm)" = "lm", "LOESS (loess)" = "loess"),
-        selected = "lm"
+        "overlay_palette", "Palette",
+        choices = c(
+          "Okabe–Ito"     = "okabe",
+          "Tableau 10"    = "tableau10",
+          "Set2 (pastel)" = "set2",
+          "Viridis (dark)"= "viridis",
+          "Key"           = "key"
+        ),
+        selected = "okabe", width = "100%"
       ),
+      tags$small(class="text-muted d-block",
+                 "y-axis color selection applies only to the single-variable view"),
+      tags$small(class="text-muted d-block",
+                 "Plotting multiple variables uses the palette"),
+
       conditionalPanel(
-        "input.smooth_method == 'loess'",
-        sliderInput("smooth_span", "LOESS span", min = .05, max = 1, value = .4, step = .05)
-      ),
-      checkboxInput("smooth_show_ci", "Show 95% CI band", FALSE),
-      sliderInput("smooth_lwd",   "Smoother width",   min = 1, max = 8, value = 3,  step = 1),
-      sliderInput("smooth_alpha", "Smoother opacity", min = 0.1, max = 1, value = .6, step = .05)
-    )
-  )
-),
-
-
-#END TEST
-
-#continue----
-
-
-
-hr(),
-tags$h5("Flag Options"),
-
-    sliderInput("flag_size",     "Flag point size",   min = 1,  max = 14, value = 8,  step = 1),
-checkboxInput("overlay_hollow", "Use hollow circles", TRUE),
-tags$small(class="text-muted",
-           "Flag options: Toggle hollow versus filled circles"), #how to have this closer to "use hollow circles?" # or use this as a tooltip for the overlay_hollow?
-hr(),
-
-
-#color selection
-tags$h5("Color"),
-selectInput(
-  "overlay_palette", "Palette",
-  choices = c(
-    "Okabe–Ito"       = "okabe",
-    "Tableau 10"      = "tableau10",
-    "Set2 (pastel)"   = "set2",
-    "Viridis (dark)"  = "viridis",
-    "Key"             = "key"
-  ),
-  selected = "okabe", width = "100%"
-),
-# Y color (single-Y only)
-tags$small(class="text-muted",
-           "y-axis color selection applies only to the single-variable view"),
-tags$small(class="text-muted",
-           "Plotting multiple variables use color palettes"), #how to have this on the second line?
-
-conditionalPanel(
-  "!input.overlay_mode",
-  selectInput(
-    "y_color_style", "y-axis color (single view)",
-    choices = c(
-      "Theme accent (default)" = "default",
-      "Black"        = "black",
-      "Custom"                = "custom"
-    ),
-    selected = "default", width = "100%"
-  ),
-  conditionalPanel(
-    "input.y_color_style == 'custom'",
-    textInput("y_color_custom", "Custom hex", value = "#1F449C", width = "100%")
-  )
-),
-
-# universal: used in overlay and single-Y
-selectInput(
-  "flag_color_scheme", "Flag color style",
-  choices = c(
-    "Yellow (classic)"              = "yellow",
-    "Match variable (darker)"       = "match_dark",
-    "Match variable (lighter)"      = "match_light"#,
-    #"Accessible pair (color-blind)" = "accessible"
-  ),
-  selected = "yellow", width = "100%"
-),
-
-# small copy tweak so it makes sense in single-Y too
-uiOutput("pair_legend"),
-checkboxInput("show_pair_legend", "Show color key", TRUE)
-
-#END Advanced options
-  )
-),
-
-
-    hr(),
-
-
-      tags$h5("Interact with data"),
-      fluidRow(
-        column(
-          6,
-          actionButton(
-            "add_sel", "Flag Data",
-            width = "100%", icon = icon("check"),
-            'data-bs-toggle' = "tooltip",
-            title = "Add the selected points to the accumulated removal code"
-          )
+        "!input.overlay_mode",
+        selectInput(
+          "y_color_style", "y-axis color (single view)",
+          choices = c(
+            "Theme accent (default)" = "default",
+            "Black"                  = "black",
+            "Custom"                 = "custom"
+          ),
+          selected = "default", width = "100%"
         ),
-        column(
-          6,
-          actionButton(
-            "clear_sel","Clear Selection",
-            width = "100%", icon = icon("broom"),
-            'data-bs-toggle' = "tooltip",
-            title = "Clear all flagged points from the current y-variable from the accumulated removal code"
-          )
+        conditionalPanel(
+          "input.y_color_style == 'custom'",
+          textInput("y_color_custom", "Custom hex", value = "#1F449C", width = "100%")
         )
       ),
 
-      fluidRow(
-        column(
-          6,
-          actionButton(
-            "remove_acc","Unflag Data",
-            width = "100%", icon = icon("ban"),
-            'data-bs-toggle' = "tooltip",
-            title = "Remove current selection from the accumulated removal code"
-          )
+      selectInput(
+        "flag_color_scheme", "Flag color style",
+        choices = c(
+          "Yellow (classic)"        = "yellow",
+          "Match variable (darker)" = "match_dark",
+          "Match variable (lighter)"= "match_light"
         ),
-        column(
-          6,
-          actionButton(
-            "remove","Apply removals",
-            width = "100%", icon = icon("trash"),
-            'data-bs-toggle' = "tooltip",
-            title = "Turn the currently selected Y‐values into NA's and remove from view. These will be reflected in the exported .csv using the 'export cleaned data' button"
-          )
-        )
+        selected = "yellow", width = "100%"
       ),
 
-
-        hr(),
-
-tags$h5("Data subset options"), #better name?
-#subset data by time----
-        #TIME SUBSET
-        # --- Time subset (collapsible) ---
-        bslib::accordion(
-          id = "advanced_timesub_box",
-          open = FALSE,
-          bslib::accordion_panel(
-            title = tagList(icon("clock"), "Time subset"),
-            value = "advanced",  # <-- REQUIRED: unique character id
-
-
-            # Year(s)
-tags$h5("Select by Year"),
-            tagAppendAttributes(
-              selectizeInput(
-                "year_sel", "Select Year(s):",
-                choices = NULL, multiple = TRUE,
-                options = list(
-                  placeholder = "– upload to load year(s) –",
-                  plugins = list("remove_button")
-                ),
-                width = "100%"
-              ),
-              'data-bs-toggle' = "tooltip",
-              'data-bs-title'  = "Filter to one or more years"
-            ),
-
-            # Month(s)
-tags$h5("Select by Month"),
-            shinyWidgets::pickerInput(
-              inputId = "month_sel",
-              label   = "Select month(s):",
-              choices = stats::setNames(1:12, month.abb),
-              multiple = TRUE,
-              options = list(
-                `actions-box` = TRUE,
-                `selected-text-format` = "count > 3",
-                `none-selected-text`   = "All months"
-              )
-            ),
-
-            # Day(s)
-tags$h5("Select by Day"),
-            shinyWidgets::airDatepickerInput(
-              inputId    = "day_sel",
-              label      = "Specific day(s):",
-              multiple   = TRUE,
-              autoClose  = TRUE,
-              clearButton = TRUE,
-              placeholder = "Pick one or more days"
-            ),
-
-tags$h5("Select by Hour"),
-            # Hour-of-day subsetting (local clock)
-            shinyWidgets::sliderTextInput(
-              inputId  = "hod_rng",
-              label    = "Hours of day (local):",
-              choices  = sprintf("%02d:00", 0:24),
-              selected = c("00:00", "24:00"),   # ← full day by default
-              grid     = TRUE,
-              dragRange = TRUE
-            ),
-            checkboxInput("hod_invert", "Use outside these hours (night)", FALSE),
-
-
-
-
-
-
-            tags$small(class = "text-muted",
-                       "*Time filters are applied in the chosen viewing timezone"))
-        ),
-#PRM----
-#prm module
-# Group PRM, range/time, outliers, and code panels
-bslib::accordion(
-  id = "prm_sections",
-  open = FALSE,
-
-bslib::accordion_panel(
-  title = tags$span(
-
-    class = "d-inline-flex align-items-center gap-2",
-    icon("seedling"),  # far = Font Awesome Regular
-    #icon("sliders"),
-
-    tags$span(
-      HTML("Physical Range Module&nbsp;(PRM)"),
-      'data-bs-toggle'   = "tooltip",
-      'data-bs-placement' = "right",
-      title              = "Clamp variables to possible physical ranges; out-of-range → NA"
+      uiOutput("pair_legend"),
+      checkboxInput("show_pair_legend", "Show color key", TRUE)
     )
   ),
-  value = "prm",
 
-  tags$h5("Use the Physical Range Module"),
+  hr(),
 
+  # Interact with data ----
+  tags$h5("Interact with data"),
   fluidRow(
     column(
       6,
       actionButton(
-        "apply_prm_btn", "Apply PRM",
-        width = "100%", icon = icon("sliders-h"),
-        'data-bs-toggle'="tooltip",
-        title="Clamp to PRM bounds; out-of-range set to NA. Reversible."
+        "add_sel", "Flag Data",
+        width = "100%", icon = icon("check"),
+        'data-bs-toggle' = "tooltip",
+        title = "Add the selected points to the accumulated removal code"
       )
     ),
     column(
       6,
       actionButton(
-        "undo_prm_btn", "Undo PRM",
-        width = "100%", icon = icon("undo"),
-        'data-bs-toggle'="tooltip",
-        title="Reverts only values changed by the last PRM apply. Other edits unaffected."))),
-
-  tags$small(class = "text-muted",
-             "Note: This turns data values into 'NA' when outside of the PRM range (See Help: PRM for specific values)"),
-
-  hr(),
-  tags$details(
-    tags$summary("PRM options"),
-    tagAppendAttributes(
-      selectizeInput(
-        "prm_families", "Variables (optional):",
-        choices = NULL, multiple = TRUE,
-        options = list(
-          placeholder = "Default: All relevant variables matched by PRM",
-          plugins = list("remove_button")
-        )
-      ),
-      'data-bs-toggle'="tooltip",
-      title="Type base names like SWC, P, TA, CO2 (we match columns by name prefix, e.g. ^SWC($|_)). Leave empty to apply to all"
+        "clear_sel","Clear Selection",
+        width = "100%", icon = icon("broom"),
+        'data-bs-toggle' = "tooltip",
+        title = "Clear all flagged points from the current y-variable from the accumulated removal code"
+      )
+    )
+  ),
+  fluidRow(
+    column(
+      6,
+      actionButton(
+        "remove_acc","Unflag Data",
+        width = "100%", icon = icon("ban"),
+        'data-bs-toggle' = "tooltip",
+        title = "Remove current selection from the accumulated removal code"
+      )
     ),
-    div(class="d-grid gap-2 mt-2",
-        actionButton("apply_prm_subset", "Apply PRM to selected", icon = icon("play"))))
-  )
-
+    column(
+      6,
+      actionButton(
+        "remove","Apply removals",
+        width = "100%", icon = icon("trash"),
+        'data-bs-toggle' = "tooltip",
+        title = "Turn the currently selected Y‐values into NA's and remove from view. These will be reflected in the exported .csv using the 'export cleaned data' button"
+      )
+    )
   ),
 
-hr(),
+  hr(),
 
-tags$h5("Flag options"),
-#flag by range----
+  # Time subset ----
+  tags$h5("Data subset options"),
+  bslib::accordion(
+    id = "advanced_timesub_box",
+    open = FALSE,
+    bslib::accordion_panel(
+      title = tagList(icon("clock"), "Time subset"),
+      value = "advanced",
 
-        bslib::accordion_panel(
-          title = tagList(icon("sliders-h"), "Flag by value range"),
-          value = "range",
-
-          tags$h5("Flag Values based on range"),
-
-          selectInput("rng_var", "Variable", choices = NULL),
-          #div(class = "mt-1", uiOutput("rng_scope_ui")), #what does this do??
-          checkboxInput("rng_link_y", "Link selected variable to plot Y-axis", TRUE),
-
-          fluidRow(
-            column(6, numericInput("rng_min", "Min (optional)", value = NA)),
-            column(6, numericInput("rng_max", "Max (optional)", value = NA))
+      tags$h5("Select by Year"),
+      tagAppendAttributes(
+        selectizeInput(
+          "year_sel", "Select Year(s):",
+          choices = NULL, multiple = TRUE,
+          options = list(
+            placeholder = "– upload to load year(s) –",
+            plugins = list("remove_button")
           ),
-          div(class="d-grid gap-2",
-              actionButton("rng_flag", "Flag values outside range"))
+          width = "100%"
         ),
+        'data-bs-toggle' = "tooltip",
+        'data-bs-title'  = "Filter to one or more years"
+      ),
 
-#flag by time----
-        bslib::accordion_panel(
-          title = tagList(icon("clock"), "Flag by date range"),
-          value = "time",
-          tags$h5("Flag Values based on Date"),
+      tags$h5("Select by Month"),
+      shinyWidgets::pickerInput(
+        inputId = "month_sel",
+        label   = "Select month(s):",
+        choices = stats::setNames(1:12, month.abb),
+        multiple = TRUE,
+        options = list(
+          `actions-box` = TRUE,
+          `selected-text-format` = "count > 3",
+          `none-selected-text`   = "All months"
+        )
+      ),
 
-          sliderInput(
-            "time_rng", "TIMESTAMP_START range:",
-            min   = 0,
-            max   = 1,
-            value = c(0, 1),
-            timeFormat = "%Y-%m-%d\n%H:%M",
-            step  = 3600
-          ),
-          fluidRow(
-            column(
-              6,
-              shinyWidgets::airDatepickerInput(
-                inputId    = "start_dt",
-                label      = "Start:",
-                timepicker = TRUE,
-                autoClose  = TRUE,
-                placeholder = "Select start"
-              )
-            ),
-            column(
-              6,
-              shinyWidgets::airDatepickerInput(
-                inputId    = "end_dt",
-                label      = "End:",
-                timepicker = TRUE,
-                autoClose  = TRUE,
-                placeholder = "Select end"
-              )
-            )
-          ),
+      tags$h5("Select by Day"),
+      shinyWidgets::airDatepickerInput(
+        inputId    = "day_sel",
+        label      = "Specific day(s):",
+        multiple   = TRUE,
+        autoClose  = TRUE,
+        clearButton = TRUE,
+        placeholder = "Pick one or more days"
+      ),
 
-          fluidRow(
-            column(6, actionButton("time_flag",     "Flag inside",  class = "btn btn-primary w-100")),
-            column(6, actionButton("time_flag_out", "Flag outside", class = "btn btn-outline-primary w-100"))
-          )
-            ),
+      tags$h5("Select by Hour"),
+      shinyWidgets::sliderTextInput(
+        inputId  = "hod_rng",
+        label    = "Hours of day (local):",
+        choices  = sprintf("%02d:00", 0:24),
+        selected = c("00:00", "24:00"),
+        grid     = TRUE,
+        dragRange = TRUE
+      ),
+      checkboxInput("hod_invert", "Use outside these hours (night)", FALSE),
 
-#Select outliers----
-        bslib::accordion_panel(
-          title = tagList(icon("wave-square"), "Flag outliers"),
-          value = "outliers",
+      tags$small(class = "text-muted",
+                 "*Time filters are applied in the chosen viewing timezone")
+    )
+  ),
 
-          tags$h5("Select outliers"),
-          sliderInput("sd_thresh", "Highlight points beyond σ:", min = 0, max = 3, value = 0, step = 1),
-          checkboxInput("show_reg", "Show regression line & R²", value = TRUE),
-          fluidRow(
-            column(
-              6,
-              tagAppendAttributes(
-                actionButton("add_outliers", "Select all ±σ outliers", width="100%"),
-                'data-bs-toggle' = "tooltip",
-                title = "Select every point whose residual is beyond ± n standard deviations (σ) from the regression line and add to the accumulated code"
-              )
-            ),
-            column(
-              6,
-              tagAppendAttributes(
-                actionButton("clear_outliers", "Clear ±σ outliers", width="100%"),
-                'data-bs-toggle' = "tooltip",
-                title = "Remove ± n standard deviations (σ) from the regression line from your the accumulated code"
-              )
+  # PRM + Range/Time/Outliers/Code (grouped) ----
+  bslib::accordion(
+    id = "prm_sections",
+    open = FALSE,
 
-            ),
-            tags$small(class = "text-muted",
-                       "Note: outlier detection uses the current Y variable only; overlay is ignored")
+    # PRM
+    bslib::accordion_panel(
+      title = tags$span(
+        class = "d-inline-flex align-items-center gap-2",
+        icon("seedling"),
+        tags$span(
+          HTML("Physical Range Module&nbsp;(PRM)"),
+          'data-bs-toggle'   = "tooltip",
+          'data-bs-placement' = "right",
+          title              = "Clamp variables to possible physical ranges; out-of-range → NA"
+        )
+      ),
+      value = "prm",
+
+      tags$h5("Use the Physical Range Module"),
+      fluidRow(
+        column(
+          6,
+          actionButton(
+            "apply_prm_btn", "Apply PRM",
+            width = "100%", icon = icon("sliders-h"),
+            'data-bs-toggle'="tooltip",
+            title="Clamp to PRM bounds; out-of-range set to NA. Reversible."
           )
         ),
-
-
-
-
-
-hr(),
-
-#code generation----
-tags$h5("Code generation"),
-#code generation
-        bslib::accordion_panel(
-          title = tagList(icon("code"), "Code generation"),
-          value = "code",
-
-tags$h5("Automatic code generation for nullifying data"),
-
-          fluidRow(
-            class = "align-items-center g-2",
-            style = "display: flex; align-items: center; margin-bottom: 0.5rem;",
-
-            column(
-              width = 8, style = "padding-right: 0;",
-              div(
-                class = "mb-0",
-                radioButtons(
-                  "code_choice", NULL,
-                  choiceNames  = list(
-                    tagList(icon("code"), HTML("&nbsp;Current")),
-                    tagList(icon("list-ul"), HTML("&nbsp;Accumulated"))
-                  ),
-                  choiceValues = c("current", "all"),
-                  inline       = TRUE
-                )
-              )
-            ),
-
-            column(
-              width = 4, class = "copy-button-col",
-              tags$button(
-                id    = "copy_code_btn",
-                type  = "button",
-                class = "btn btn-outline-secondary w-100 d-inline-flex align-items-center justify-content-center gap-2",
-                #class = "btn btn-outline-secondary w-100",
-                #"Copy visible code",
-                'data-bs-toggle' = "tooltip",
-                title = "Copy visible code",
-                icon("clipboard"),
-                span("Copy code"),
-                onclick = HTML("
-            // pick current or accumulated
-            var which = document.querySelector('input[name=code_choice]:checked').value;
-            var srcId = which==='current' ? 'code_current' : 'code_all';
-            var txt   = document.getElementById(srcId).innerText;
-            // old‐school textarea hack
-            var ta = document.createElement('textarea');
-            ta.value = txt;
-            ta.setAttribute('readonly','');
-            ta.style.position = 'absolute';
-            ta.style.left = '-9999px';
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            document.body.removeChild(ta);
-            // fire an input event so Shiny can show its own toast
-            Shiny.setInputValue('did_copy_code', Math.random());
-          ")
-              )
+        column(
+          6,
+          actionButton(
+            "undo_prm_btn", "Undo PRM",
+            width = "100%", icon = icon("undo"),
+            'data-bs-toggle'="tooltip",
+            title="Reverts only values changed by the last PRM apply. Other edits unaffected.")
+        )
+      ),
+      tags$small(class = "text-muted",
+                 "Note: This turns data values into 'NA' when outside of the PRM range (See Help: PRM for specific values)"),
+      hr(),
+      tags$details(
+        tags$summary("PRM options"),
+        tagAppendAttributes(
+          selectizeInput(
+            "prm_families", "Variables (optional):",
+            choices = NULL, multiple = TRUE,
+            options = list(
+              placeholder = "Default: All relevant variables matched by PRM",
+              plugins = list("remove_button")
             )
           ),
+          'data-bs-toggle'="tooltip",
+          title="Type base names like SWC, P, TA, CO2 (we match columns by name prefix, e.g. ^SWC($|_)). Leave empty to apply to all"
+        ),
+        div(class="d-grid gap-2 mt-2",
+            actionButton("apply_prm_subset", "Apply PRM to selected", icon = icon("play")))
+      )
+    ),
 
-          uiOutput("code_ui"),
+    hr(),
+    tags$h5("Flag options"),
 
-          conditionalPanel(
-            "input.code_choice == 'all'",
-            actionButton(
-              "reset_accum", "Clear accumulated",
-              width = "100%",
-              'data-bs-toggle'="tooltip",
-              title = "Remove all points from accumulated list"
-            )
-          ),
-tags$small(class = "text-muted",
-           "Note: Current code turns currently selected data flags values into 'NA';
-           Accumulated code shows code for all 'removed' data points when removing flags during the session *Accumulated code will be available in the exported zip file as its own R script")
-        ),  # ← closes the code panel (this comma is OK)
+    # Flag by range
+    bslib::accordion_panel(
+      title = tagList(icon("sliders-h"), "Flag by value range"),
+      value = "range",
+      tags$h5("Flag Values based on range"),
+      selectInput("rng_var", "Variable", choices = NULL),
+      checkboxInput("rng_link_y", "Link selected variable to plot Y-axis", TRUE),
+      fluidRow(
+        column(6, numericInput("rng_min", "Min (optional)", value = NA)),
+        column(6, numericInput("rng_max", "Max (optional)", value = NA))
+      ),
+      div(class="d-grid gap-2",
+          actionButton("rng_flag", "Flag values outside range"))
+    ),
 
-        ),     # ← (optional) keep this comma or start a new line
+    # Flag by time
+    bslib::accordion_panel(
+      title = tagList(icon("clock"), "Flag by date range"),
+      value = "time",
+      tags$h5("Flag Values based on Date"),
+      sliderInput(
+        "time_rng", "TIMESTAMP_START range:",
+        min = 0, max = 1, value = c(0, 1),
+        timeFormat = "%Y-%m-%d\n%H:%M", step  = 3600
+      ),
+      fluidRow(
+        column(
+          6,
+          shinyWidgets::airDatepickerInput(
+            inputId    = "start_dt", label = "Start:",
+            timepicker = TRUE, autoClose  = TRUE,
+            placeholder = "Select start"
+          )
+        ),
+        column(
+          6,
+          shinyWidgets::airDatepickerInput(
+            inputId    = "end_dt", label = "End:",
+            timepicker = TRUE, autoClose  = TRUE,
+            placeholder = "Select end"
+          )
+        )
+      ),
+      fluidRow(
+        column(6, actionButton("time_flag",     "Flag inside",  class = "btn btn-primary w-100")),
+        column(6, actionButton("time_flag_out", "Flag outside", class = "btn btn-outline-primary w-100"))
+      )
+    ),
 
-        hr(),
+    # Outliers
+    bslib::accordion_panel(
+      title = tagList(icon("wave-square"), "Flag outliers"),
+      value = "outliers",
+      tags$h5("Select outliers"),
+      sliderInput("sd_thresh", "Highlight points beyond σ:", min = 0, max = 3, value = 0, step = 1),
+      checkboxInput("show_reg", "Show regression line & R²", value = TRUE),
+      fluidRow(
+        column(
+          6,
+          tagAppendAttributes(
+            actionButton("add_outliers", "Select all ±σ outliers", width="100%"),
+            'data-bs-toggle' = "tooltip",
+            title = "Select every point whose residual is beyond ± n standard deviations (σ) from the regression line and add to the accumulated code"
+          )
+        ),
+        column(
+          6,
+          tagAppendAttributes(
+            actionButton("clear_outliers", "Clear ±σ outliers", width="100%"),
+            'data-bs-toggle' = "tooltip",
+            title = "Remove ± n standard deviations (σ) from the regression line from your the accumulated code"
+          )
+        )
+      ),
+      tags$small(class = "text-muted",
+                 "Note: outlier detection uses the current Y variable only; overlay is ignored")
+    ),
+
+    # Code generation
+    bslib::accordion_panel(
+      title = tagList(icon("code"), "Code generation"),
+      value = "code",
+
+      tags$h5("Automatic code generation for nullifying data"),
 
       fluidRow(
-        # inside the same fluidRow as the ZIP/download
+        class = "align-items-center g-2",
+        style = "display: flex; align-items: center; margin-bottom: 0.5rem;",
         column(
-          3,
-          tagAppendAttributes(
-            downloadButton("download_csv", "Save cleaned CSV", icon = icon("file-csv"), width = "100%"),
-            'data-bs-toggle' = "tooltip",
-            title = "Download just the cleaned CSV (keeps original TIMESTAMP_START strings)"
-          )
-        ),
-
-        column(
-          3,
-          tagAppendAttributes(
-            downloadButton("download_data", "Export zip file", icon = icon("file-archive"), width="100%"),
-            'data-bs-toggle' = "tooltip",
-            title = "Download a .zip containing the cleaned CSV (with NAs applied using the 'Apply Removals' button) and the removal R-script"
-          )
-        ),
-        column(
-          3,
-          tagAppendAttributes(
-            actionButton("reset_data", "Reload original data", icon = icon("eraser"), width="100%"),
-            'data-bs-toggle' = "tooltip",
-            title = "Reset any changes by re-loading the original .csv file"
+          width = 8, style = "padding-right: 0;",
+          div(
+            class = "mb-0",
+            radioButtons(
+              "code_choice", NULL,
+              choiceNames  = list(
+                tagList(icon("code"), HTML("&nbsp;Current")),
+                tagList(icon("list-ul"), HTML("&nbsp;Accumulated"))
+              ),
+              choiceValues = c("current", "all"),
+              inline       = TRUE
+            )
           )
         ),
         column(
-          3,
-          div(style="margin-top:0.5em;", checkboxInput("dark_mode","Dark mode",FALSE))
+          width = 4, class = "copy-button-col",
+          tags$button(
+            id    = "copy_code_btn",
+            type  = "button",
+            class = "btn btn-outline-secondary w-100 d-inline-flex align-items-center justify-content-center gap-2",
+            'data-bs-toggle' = "tooltip",
+            title = "Copy visible code",
+            icon("clipboard"),
+            span("Copy code"),
+            onclick = HTML("
+              var which = document.querySelector('input[name=code_choice]:checked').value;
+              var srcId = which==='current' ? 'code_current' : 'code_all';
+              var txt   = document.getElementById(srcId).innerText;
+              var ta = document.createElement('textarea');
+              ta.value = txt; ta.setAttribute('readonly','');
+              ta.style.position = 'absolute'; ta.style.left = '-9999px';
+              document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+              document.body.removeChild(ta);
+              Shiny.setInputValue('did_copy_code', Math.random());
+            ")
+          )
         )
+      ),
+
+      uiOutput("code_ui"),
+
+      conditionalPanel(
+        "input.code_choice == 'all'",
+        actionButton(
+          "reset_accum", "Clear accumulated",
+          width = "100%",
+          'data-bs-toggle'="tooltip",
+          title = "Remove all points from accumulated list"
+        )
+      ),
+      tags$small(class = "text-muted",
+                 "Note: Current code turns the currently selected data flags into 'NA'. Accumulated code shows code for all removals; it will be included in the exported ZIP as an R script.")
+    )
+  ),  # end prm_sections accordion
+
+  hr(),
+
+  # Downloads / toggles ----
+  fluidRow(
+    column(
+      3,
+      tagAppendAttributes(
+        downloadButton("download_csv", "Save cleaned CSV", icon = icon("file-csv"), width = "100%"),
+        'data-bs-toggle' = "tooltip",
+        title = "Download just the cleaned CSV (keeps original TIMESTAMP_START strings)"
       )
-        ),  # <- close sidebarPanel, #   <- comma after sidebarPanel
+    ),
+    column(
+      3,
+      tagAppendAttributes(
+        downloadButton("download_data", "Export zip file", icon = icon("file-archive"), width="100%"),
+        'data-bs-toggle' = "tooltip",
+        title = "Download a .zip containing the cleaned CSV and the removal R script"
+      )
+    ),
+    column(
+      3,
+      tagAppendAttributes(
+        actionButton("reset_data", "Reload original data", icon = icon("eraser"), width="100%"),
+        'data-bs-toggle' = "tooltip",
+        title = "Reset any changes by re-loading the original .csv file"
+      )
+    ),
+    column(
+      3,
+      div(style="margin-top:0.5em;", checkboxInput("dark_mode","Dark mode",FALSE))
+    )
+  )
+)
 
-#main panel----
-        mainPanel(
-          width = 8,
-          plotlyOutput("qc_plot", width = "100%", height = "80vh"))
 
-        )    # <- close sidebarLayout
+
+
+
+
+
+
+
+
+
 
 #server----
 server <- function(input, output, session) {
@@ -931,6 +802,10 @@ server <- function(input, output, session) {
 
   #NA strings for r script output
   NA_STRINGS <- c("NA","NaN","","-9999","-9999.0","-9999.00","-9999.000")
+
+
+  # small helper used later
+  `%||%` <- function(x, y) if (is.null(x)) y else x
 
   #time helper
   .parse_hhmm <- function(x) {
@@ -952,15 +827,13 @@ server <- function(input, output, session) {
     day_on  <- any(sel & day)
     nite_on <- any(sel & !day)
 
-    icons <- c(
-      if (day_on)  "☀" else NULL,
-      if (nite_on) "☾" else NULL
-    )
-    if (!length(icons)) return("—")
+    icons <- character(0)
+    if (day_on)  icons <- c(icons, "☀")
+    if (nite_on) icons <- c(icons, "☾")
+
+    if (length(icons) == 0) return("—")
     paste(icons, collapse = " ")
   }
-
-
 
 
 
@@ -1074,7 +947,7 @@ server <- function(input, output, session) {
   })
 
 
-#PRM----
+  #PRM----
   #PRM
   # --- init reactive stores early (so we can use rv immediately) ---
   rv <- reactiveValues(
@@ -1143,23 +1016,6 @@ server <- function(input, output, session) {
                     error = function(e) NULL)
     if (is.null(sel)) integer(0) else sel$key
   })
-
-  # flag_cols_for <- function(vars, base_cols, scheme = "match_dark") {
-  #   n <- length(vars); if (!n) return(setNames(character(0), character(0)))
-  #   scheme <- scheme %||% "match_dark"
-  #
-  #   if (scheme == "yellow")
-  #     return(setNames(rep("#FFC20A", n), vars))
-  #
-  #   if (scheme == "match_dark")
-  #     return(setNames(vapply(base_cols, function(h) darken_hex(h, .50), ""), vars))
-  #
-  #   if (scheme == "match_light")
-  #     return(setNames(vapply(base_cols, function(h) tint_hex(h, .60), ""), vars))
-  #
-  #   # fallback
-  #   setNames(vapply(base_cols, function(h) darken_hex(h, .50), ""), vars)
-  # }
 
 
   # Auto-pick “pairs” for color-blind friendly palettes; else use user choice
@@ -1267,8 +1123,6 @@ server <- function(input, output, session) {
     unique(k)
   })
 
-  # small helper used later
-  `%||%` <- function(x, y) if (is.null(x)) y else x
 
   # helper (put near other helpers)
   infer_cadence_sec <- function(ts) {
@@ -1696,16 +1550,16 @@ server <- function(input, output, session) {
     updateSelectInput(session, "rng_var", label = lbl)
   })
 
-    #Prm
+  #Prm
   # server()
   observe({
     fam <- input$prm_families
     lab <- if (length(fam)) sprintf("Apply PRM (%d selected)", length(fam)) else "Apply PRM (all)"
-  updateActionButton(session, "apply_prm_btn", label = lab)
+    updateActionButton(session, "apply_prm_btn", label = lab)
   })
 
-    # PRM family choices present in the data
-    # PRM variable choices present in the uploaded data
+  # PRM family choices present in the data
+  # PRM variable choices present in the uploaded data
   # Put this somewhere in server() AFTER rv$df exists:
   observe({
     req(rv$df)
@@ -2111,7 +1965,7 @@ server <- function(input, output, session) {
       if (isTRUE(input$dark_mode)) dark_theme else light_theme
     )
   })
-#helpModal----
+  #helpModal----
   helpModal <- function() {
     shiny::modalDialog(
       title     = "Help: fluxtools QA/QC",
@@ -2362,8 +2216,9 @@ server <- function(input, output, session) {
 
       all_num <- names(df %>% dplyr::select(-TIMESTAMP_START, -raw_ts, -ts_str, -.row) %>% dplyr::select(where(is.numeric)))
       cmap    <- setNames(pal_overlay(length(all_num)), all_num)
-      cols    <- cmap[vars_plot]
-      fcols   <- flag_cols_for(vars_plot, cols, flag_scheme())
+      # AFTER (only for vars we’re plotting)
+      cols  <- setNames(pal_overlay(length(vars_plot)), vars_plot)
+      fcols <- flag_cols_for(vars_plot, cols, flag_scheme())
 
       s  <- input$overlay_size  %||% 6
       fs <- input$flag_size     %||% (s + 2)
@@ -2383,14 +2238,15 @@ server <- function(input, output, session) {
             p <- p %>% plotly::add_lines(
               data = dd_base, x = x_base, y = dd_base[[v]],
               name = v, inherit = FALSE, opacity = a,
-              line = list(width = input$line_lwd %||% 2, color = cols[[v]])
+              line  = list(width = input$line_lwd %||% 2, color = unname(cols[[v]]))
+
             )
             if (isTRUE(input$line_show_points)) {
               p <- p %>% plotly::add_markers(
                 data = dd_base, x = x_base, y = dd_base[[v]],
                 key = paste(dd_base$ts_str, v, sep = "||"),
                 inherit = FALSE, showlegend = FALSE, hoverinfo = "skip",
-                marker = list(size = 6, color = cols[[v]], opacity = 0.001)
+                marker = list(size = 6, color = unname(cols[[v]]), opacity = 0.001)
               )
             }
           } else {
@@ -2487,14 +2343,15 @@ server <- function(input, output, session) {
         p <- p %>% plotly::add_lines(
           data = dd_base, x = x_base, y = dd_base[[v]],
           name = v, inherit = FALSE, opacity = a,
-          line = list(width = input$line_lwd %||% 2, color = base_col)
+          line  = list(width = input$line_lwd %||% 2, color = unname(cols[[v]]))
+          #line = list(width = input$line_lwd %||% 2, color = base_col)
         )
         if (isTRUE(input$line_show_points)) {
           p <- p %>% plotly::add_markers(
             data = dd_base, x = x_base, y = dd_base[[v]],
             key = dd_base$ts_str,
             inherit = FALSE, showlegend = FALSE, hoverinfo = "skip",
-            marker = list(size = 6, color = base_col, opacity = 0.001)
+            marker = list(size = 6, color = unname(cols[[v]]), opacity = 0.001)
           )
         }
       } else {
@@ -2762,7 +2619,7 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
   # helper once
   snap_to_pool <- function(x, pool) pool[ which.min(abs(as.numeric(pool) - as.numeric(x))) ]
 
-#   ──────────────────────────────────────────────────────────────────
+  #   ──────────────────────────────────────────────────────────────────
   # DOWNLOAD HANDLER for “Download cleaned CSV”----
   # ────────────────────────────────────────────────────────────────────────────
   output$download_data <- downloadHandler(
@@ -2966,7 +2823,7 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
       removed_ts[[v]] <- setdiff(old, unique(byv[[v]]))
     }
   })
-#slider fix
+  #slider fix
   observeEvent(input$start_dt, {
     df <- df_by_year(); req(df, input$start_dt)
     pool <- sort(unique(df$TIMESTAMP_START[ rows_for_time(df) ])); if (!length(pool)) return()
@@ -3061,6 +2918,32 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
     session$resetBrush("qc_plot")
   })
 }
+
+# Main panel (define this before assembling the UI)
+main_content <- mainPanel(
+  width = 8,
+  plotlyOutput("qc_plot", width = "100%", height = "80vh")
+)
+
+
+#assemble the UI----
+ui <- fluidPage(
+  style = "height:100vh; overflow:hidden;",
+  theme = light_theme,
+
+  head_assets,
+  title_bar,
+  subtitle_bar,
+
+  sidebarLayout(
+    sidebar_controls,
+    main_content       # ⛔ no trailing comma (last arg)
+  )                    # closes sidebarLayout
+)                      # closes fluidPage
+
+
+
+
 
 #run app----
 shinyApp(ui, server)
