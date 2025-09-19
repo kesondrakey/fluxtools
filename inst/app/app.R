@@ -710,7 +710,7 @@ hr(),
       value = "outliers",
       tags$h5("Select outliers"),
       sliderInput("sd_thresh", "Highlight points beyond σ:", min = 0, max = 3, value = 0, step = 1),
-      checkboxInput("show_reg", "Show regression line & R²", value = TRUE),
+      checkboxInput("show_reg", "Show regression line & R²", value = FALSE),
       fluidRow(
         column(
           6,
@@ -2202,32 +2202,61 @@ server <- function(input, output, session) {
     showNotification("Range flags applied per overlaid variable.", type="message", duration=2)
   })
 
+
   # ────────────────────────────────────────────────────────────────────────────
-  # Compute residuals & flag ±σ outliers
+  # Compute residuals & flag ±σ outliers (single-var, scatter/line only)
   # ────────────────────────────────────────────────────────────────────────────
   df_clean <- reactive({
+    # only relevant in single-variable, not compare, not overlay, and not smooth-only
+    if (isTRUE(input$compare_mode) || isTRUE(input$overlay_mode) || isTRUE(input$only_smooth)) {
+      return(NULL)
+    }
+    geom <- input$geom_mode %||% "scatter"
+    if (!geom %in% c("scatter","line")) return(NULL)
+
     df0 <- df_by_year()
-    req(df0, input$xvar, input$yvar, input$sd_thresh)
+    req(df0, input$xvar, input$yvar)
 
-    df1 <- df0 %>%
-      filter(
-        !is.na(.data[[input$xvar]]),
-        !is.na(.data[[input$yvar]])
-      )
+    # keep rows that are finite in both x and y
+    x_raw <- df0[[input$xvar]]
+    y_raw <- df0[[input$yvar]]
 
-    fit0 <- lm(reformulate(input$xvar, input$yvar), data = df1)
+    ok <- is.finite(suppressWarnings(as.numeric(x_raw))) & is.finite(y_raw)
+    if (!any(ok)) return(NULL)
 
-    df1 %>%
-      mutate(
-        fitted = predict(fit0, newdata = .),
-        resid  = .data[[input$yvar]] - fitted,
-        sigma  = sd(resid, na.rm = TRUE),
-        flag   = if_else(
-          abs(resid) > input$sd_thresh * sigma,
-          "outlier", "inlier"
-        )
-      )
+    d <- df0[ok, , drop = FALSE]
+
+    # numeric x for regression; keep proto for plotting
+    x_num <- if (inherits(d[[input$xvar]], "POSIXt")) as.numeric(d[[input$xvar]]) else d[[input$xvar]]
+    y     <- d[[input$yvar]]
+
+    # need at least 3 points for a line fit
+    if (sum(is.finite(x_num) & is.finite(y)) < 3) return(NULL)
+
+    fit0 <- lm(y ~ x_num)
+
+    fitted <- as.numeric(predict(fit0, newdata = data.frame(x_num = x_num)))
+    resid  <- y - fitted
+    sigma  <- stats::sd(resid, na.rm = TRUE)
+    flag   <- ifelse(abs(resid) > (input$sd_thresh %||% 0) * sigma, "outlier", "inlier")
+    r2     <- tryCatch(summary(fit0)$r.squared, error = function(e) NA_real_)
+
+    # x to plot (respect view-time for time x)
+    x_plot <- if (identical(input$xvar, "TIMESTAMP_START")) d$TIMESTAMP_START + data_off_hr()*3600 else d[[input$xvar]]
+
+    out <- dplyr::mutate(
+      d,
+      x_num   = x_num,
+      x_plot  = x_plot,
+      fitted  = fitted,
+      resid   = resid,
+      .sigma  = sigma,
+      .flag   = flag,
+      .r2     = r2
+    )
+    out
   })
+
 
   ###Theme
   observe({
@@ -2340,14 +2369,29 @@ server <- function(input, output, session) {
   # Button logic: add/remove outliers & manual selection accumulation
   # ────────────────────────────────────────────────────────────────────────────
   observeEvent(input$add_outliers, {
-    ok <- df_clean() %>% filter(flag == "outlier") %>% pull(.row)
+    d <- df_clean()
+    if (is.null(d)) {
+      showNotification("Outlier detector is only available for single-variable scatter/line.", type = "message")
+      return()
+    }
+
+    ok <- d %>%
+      dplyr::filter(.flag == "outlier") %>%
+      dplyr::pull(.row)
+
+    if (length(ok) == 0) {
+      showNotification("No ±σ outliers under current settings.", type = "message")
+      return()
+    }
+
     outlier_keys(unique(c(isolate(outlier_keys()), ok)))
     sel_keys(unique(c(isolate(sel_keys()), ok)))
 
-    ts  <- df_by_year() %>% filter(.row %in% ok) %>% pull(ts_str)
+    ts  <- df_by_year() %>% dplyr::filter(.row %in% ok) %>% dplyr::pull(ts_str)
     old <- removed_ts[[input$yvar]] %||% character()
     removed_ts[[input$yvar]] <- unique(c(old, ts))
   })
+
 
   observeEvent(input$clear_outliers, {
     old_out <- isolate(outlier_keys())
@@ -2365,7 +2409,16 @@ server <- function(input, output, session) {
   # Plot tools
   # ────────────────────────────────────────────────────────────────────────────
   # Is the x-axis time?
+  #is_time_x <- function() identical(input$xvar, "TIMESTAMP_START")
+
   is_time_x <- function() identical(input$xvar, "TIMESTAMP_START")
+
+  hover_x_tpl <- function() {
+    if (is_time_x()) "%{x|%Y-%m-%d %H:%M}" else paste0(input$xvar, " = %{x:.3g}")
+  }
+  hover_xy_tpl <- function() paste0(hover_x_tpl(), "<br>", input$yvar, " = %{y:.3f}")
+
+
 
   # Convert to/from "view time" (adds your fixed UTC offset for plotting)
   to_view_x <- function(x) if (is_time_x()) x + data_off_hr()*3600 else x
@@ -2432,11 +2485,8 @@ server <- function(input, output, session) {
       inherit = FALSE, showlegend = TRUE,
       line = list(color = col_hex, width = lwd),
       opacity = line_alpha,
-      hovertemplate = paste0(
-        "%{fullData.name}<br>",
-        "%{x|%Y-%m-%d %H:%M}<br>",
-        "ŷ = %{y:.3f}<extra></extra>"
-      )  # <- pretty hover; no 'hoveron' here
+      hoverinfo = "skip"   # ← not hovertemplate
+        # <- pretty hover; no 'hoveron' here
     )
 
     if (isTRUE(show_ci) && any(is.finite(sm$ymin) & is.finite(sm$ymax))) {
@@ -2469,7 +2519,7 @@ server <- function(input, output, session) {
     only_smooth <- isTRUE(input$only_smooth) && isTRUE(input$show_smooth)
     #only_smooth <- isTRUE(input$only_smooth %||% FALSE)
 
-    # ─────────── NEW: comparison plot branch ───────────
+    # ─────────── NEW: comparison plot branch ───────────----
     if (isTRUE(input$compare_mode)) {
       req(shifted_df_b())                       # ensure B exists
       labsrc <- c(A = labA(), B = labB())
@@ -2516,7 +2566,8 @@ server <- function(input, output, session) {
                                dash  = if (src=="A") "solid" else "dash",
                                color = cols[[v]]),
                   opacity = a,
-                  type = "scattergl"
+                  type = "scattergl",
+                  hoverinfo = "skip"   # ← not hovertemplate
                 )
                 if (isTRUE(input$line_show_points)) {
                   p <- p %>% plotly::add_markers(
@@ -2526,7 +2577,8 @@ server <- function(input, output, session) {
                     name = paste0(nm, " pts"),
                     showlegend = FALSE,
                     marker = list(size = 6, color = cols[[v]], opacity = 0.001),
-                    type = "scattergl"
+                    type = "scattergl",
+                    hovertemplate = hover_xy_tpl()
                   )
                 }
               } else {
@@ -2543,7 +2595,8 @@ server <- function(input, output, session) {
                     opacity = a,
                     color  = cols[[v]]
                   ),
-                  type = "scattergl"   # <-- belongs here (not inside marker)
+                  type = "scattergl",   # <-- belongs here (not inside marker)
+                  hovertemplate = hover_xy_tpl()
               )
               }
             }
@@ -2569,7 +2622,8 @@ server <- function(input, output, session) {
                 inherit = FALSE,
                 line  = list(width = input$line_lwd %||% 2, color = cols_ds[[src]]),
                 opacity = a,
-                type = "scattergl"      # keep lines WebGL too
+                type = "scattergl",
+                hoverinfo = "skip"   # ← not hovertemplate# keep lines WebGL too
               )
               if (isTRUE(input$line_show_points)) {
                 p <- p %>% plotly::add_markers(
@@ -2580,7 +2634,8 @@ server <- function(input, output, session) {
                   legendgroup = src,
                   showlegend = FALSE,
                   marker = list(size = 6, color = cols_ds[[src]], opacity = 0.001),
-                  type = "scattergl"      # keep lines WebGL too
+                  type = "scattergl",      # keep lines WebGL too
+                  hovertemplate = hover_xy_tpl()
                 )
               }
             } else {
@@ -2635,7 +2690,8 @@ server <- function(input, output, session) {
         xaxis = list(
           type = if (identical(input$xvar, "TIMESTAMP_START")) "date" else "-",
           tickformat = if (identical(input$xvar, "TIMESTAMP_START")) "%b %d, %Y %H:%M" else NULL,
-          title = x_title_with_phase(), title_standoff = 10, tickfont = list(size = 12)
+          title = x_title_with_phase(), title_standoff = 10,
+          tickfont = list(size = 12)
         ),
         yaxis = list(title = paste(vars_plot, collapse = ", "))
       )
@@ -2693,16 +2749,18 @@ server <- function(input, output, session) {
               data = dd_base, x_for(dd_base), y = dd_base[[v]],
               name = v, inherit = FALSE, opacity = a,
               line  = list(width = input$line_lwd %||% 2, color = unname(cols[[v]])),
-              type  = "scattergl"
+              type  = "scattergl",
+              hoverinfo = "skip"   # ← not hovertemplate
 
             )
             if (isTRUE(input$line_show_points)) {
               p <- p %>% plotly::add_markers(
                 data = dd_base, x_for(dd_base), y = dd_base[[v]],
                 key = paste(dd_base$ts_str, v, sep = "||"),
-                inherit = FALSE, showlegend = FALSE, hoverinfo = "skip",
+                inherit = FALSE, showlegend = FALSE, #hoverinfo = "skip",
                 marker = list(size = 6, color = unname(cols[[v]]), opacity = 0.001),
-                type   = "scattergl"
+                type   = "scattergl",
+                hovertemplate = hover_xy_tpl()
               )
             }
           } else {
@@ -2715,7 +2773,8 @@ server <- function(input, output, session) {
                 size   = s, opacity = a, color = cols[[v]],
                 line   = list(width = if (isTRUE(input$overlay_hollow)) 1.5 else 0)
               ),
-              type = "scattergl"
+              type = "scattergl",
+              hovertemplate = hover_xy_tpl()
             )
           }
         }
@@ -2728,12 +2787,13 @@ server <- function(input, output, session) {
             data = dd_flag, x = x_flag, y = dd_flag[[v]],
             key = paste(dd_flag$ts_str, v, sep = "||"),
             name = paste0(v, " (flagged)"),
-            legendgroup = v, showlegend = FALSE, inherit = FALSE, hoverinfo = "x+y+name",
+            legendgroup = v, showlegend = FALSE, inherit = FALSE, #hoverinfo = "x+y+name",
             marker = list(
               symbol = "circle-open", size = fs,
               color = hex_to_rgba(fcols[[v]], RING_ALPHA),
               line  = list(width = RING_LINE_WIDTH)
-            )
+            ),
+            hovertemplate = hover_xy_tpl()
           )
         }
 
@@ -2814,6 +2874,7 @@ server <- function(input, output, session) {
             data = dd_base, x_for(dd_base), y = dd_base[[v]],
             name = v, inherit = FALSE, opacity = a,
             type = "scattergl",
+            hoverinfo = "skip",   # ← not hovertemplate
             #line  = list(width = input$line_lwd %||% 2, color = unname(cols[[v]]))
             line  = list(width = input$line_lwd %||% 2, color = base_col)
 
@@ -2823,9 +2884,10 @@ server <- function(input, output, session) {
             p <- p %>% plotly::add_markers(
               data = dd_base, x_for(dd_base), y = dd_base[[v]],
               key = dd_base$ts_str,
-              inherit = FALSE, showlegend = FALSE, hoverinfo = "skip",
+              inherit = FALSE, showlegend = FALSE, #hoverinfo = "skip",
               marker = list(size = 6, color = base_col, opacity = 0.001),
-              type = "scattergl"#, hoveron = "points"
+              type = "scattergl",#, hoveron = "points"
+              hovertemplate = hover_xy_tpl()   # ← add this
               #marker = list(size = 6, color = unname(cols[[v]]), opacity = 0.001)
             )
           }
@@ -2841,7 +2903,8 @@ server <- function(input, output, session) {
               color  = base_col,
               line   = list(width = if (isTRUE(input$overlay_hollow)) 1.5 else 0)
             ),
-            type = "scattergl"
+            type = "scattergl",
+            hovertemplate = hover_xy_tpl()
           )
         }
         }
@@ -2858,12 +2921,109 @@ server <- function(input, output, session) {
         #hoveron = "points",
         key = dd_flag$ts_str,
         name = paste0(v, " (flagged)"),
-        inherit = FALSE, showlegend = FALSE, hoverinfo = "x+y+name",
+        inherit = FALSE, showlegend = FALSE, #hoverinfo = "x+y+name",
         marker = list(symbol = "circle-open", size = fs,
                       color  = hex_to_rgba(fcol, RING_ALPHA),
-                      line   = list(width = RING_LINE_WIDTH))
+                      line   = list(width = RING_LINE_WIDTH)),
+        hovertemplate = hover_xy_tpl()
       )
     }
+
+
+    # ───────────────── OLS ±σ outlier highlight & R² line (single-var) ─────────────────
+    {
+      dclean <- df_clean()
+      geom   <- input$geom_mode %||% "scatter"
+
+      # 2a) highlight ±σ outliers in red when slider > 0
+      if (!is.null(dclean) && isTruthy(input$sd_thresh) && (input$sd_thresh > 0)) {
+        dhl <- dclean[dclean$.flag == "outlier", , drop = FALSE]
+
+        # don't overdraw red for points you've already flagged (yellow rings)
+        ts_flagged <- removed_ts[[input$yvar]] %||% character()
+        if (length(ts_flagged)) {
+          dhl <- dhl[ !(dhl$ts_str %in% ts_flagged), , drop = FALSE ]
+        }
+
+        if (NROW(dhl)) {
+          p <- p %>% plotly::add_markers(
+            data = dhl,
+            x    = ~x_plot,
+            y    = as.formula(paste0("~`", input$yvar, "`")),
+            name = paste0(input$sd_thresh, "σ outliers"),
+            inherit = FALSE, showlegend = TRUE,
+            marker = list(
+              symbol = "circle",
+              size   = max((input$overlay_size %||% 6) + 2, 7),
+              opacity= 0.95,
+              color  = "#E15759"   # red highlight
+            ),
+            type = "scattergl",
+
+
+            hovertemplate = paste0(
+              hover_x_tpl(), "<br>",
+              input$yvar, " = %{y:.3f}",
+              "<extra>", input$sd_thresh, "σ</extra>"
+            )
+
+          )
+        }
+      }
+
+      # 2b) regression line & R² (toggle)
+      if (isTRUE(input$show_reg) && !is.null(dclean) && NROW(dclean) >= 3) {
+        # Build a line across the x-range using the fitted model
+        ord <- order(dclean$x_num)
+        xg_num  <- seq(min(dclean$x_num), max(dclean$x_num), length.out = 200)
+        yhat    <- as.numeric(predict(lm(as.formula(paste0("`", input$yvar, "` ~ x_num")), data = dclean),
+                                      newdata = data.frame(x_num = xg_num)))
+
+        # convert x grid back to plotted scale
+        xg_plot <- if (identical(input$xvar, "TIMESTAMP_START")) {
+          # back to UTC POSIX then to view-time
+          as.POSIXct(xg_num, origin = "1970-01-01", tz = "UTC") + data_off_hr()*3600
+        } else {
+          xg_num
+        }
+
+        # draw the line
+        p <- p %>% plotly::add_lines(
+          x = xg_plot, y = yhat,
+          name = "OLS fit",
+          inherit = FALSE, showlegend = TRUE,
+          line = list(width = 3, dash = "solid", color = "#444444"),
+          opacity = 0.9
+        )
+
+        # R² annotation in the top-left corner of the panel
+        r2_txt <- sprintf("R² = %.3f", suppressWarnings(unique(dclean$.r2)[1]))
+
+        ann_col <- if (isTRUE(input$dark_mode)) "white" else "#222222"
+        ann_bg  <- if (isTRUE(input$dark_mode)) "rgba(46,46,46,0.6)" else "rgba(255,255,255,0.65)"
+
+        p <- p %>% plotly::layout(
+
+          annotations = list(
+            list(
+              text       = r2_txt,
+              xref       = "paper", yref = "paper",
+              x          = 0.08,          # ← a little to the right (0 = left, 1 = right)
+              y          = 0.98,
+              xanchor    = "left",         # anchor from the left edge of the text box
+              yanchor    = "top",
+              showarrow  = FALSE,
+              font       = list(size = 26, color = ann_col),  # ← much larger
+              bgcolor    = ann_bg,         # readable on both themes
+              bordercolor= "rgba(0,0,0,0.2)",
+              borderwidth= 0.5,
+              borderpad  = 4
+            )
+          )
+        )
+      }
+    }
+
 
     # Optional smoother (single var)
     if (isTRUE(input$show_smooth)) {
@@ -2880,6 +3040,13 @@ server <- function(input, output, session) {
     }
 
     p <- p %>% plotly::layout(
+      legend = list(
+        itemclick       = "toggleothers",
+        itemdoubleclick = "toggle",
+        orientation     = "h",
+        x = 0.5, xanchor = "center",
+        y = -0.2, yanchor = "top"
+      ),
       autosize = TRUE, dragmode = "select", font = list(size = 18),
       margin = list(l = 80, r = 20, b = 80, t = 20),
       xaxis = list(
@@ -2963,6 +3130,24 @@ df$%s[df$TIMESTAMP_START %%in%% bad_%s] <- NA_real_",
       input$yvar, format_vec(unique(ts_v), chunk = 80), input$yvar, input$yvar
     )
   })
+
+  #outlier helper
+  # Build a hover snippet for x depending on axis type
+  # hover_x_tpl <- function() {
+  #   if (identical(input$xvar, "TIMESTAMP_START")) {
+  #     "%{x|%Y-%m-%d %H:%M}"
+  #   } else {
+  #     # show the x-var name and a compact number
+  #     paste0(input$xvar, " = %{x:.3g}")
+  #   }
+  # }
+#
+#   # Build full (x,y) snippet
+#   hover_xy_tpl <- function() {
+#     paste0(hover_x_tpl(), "<br>", input$yvar, " = %{y:.3f}")
+#   }
+
+
 
   #overlay helper
   selected_pairs <- reactive({
