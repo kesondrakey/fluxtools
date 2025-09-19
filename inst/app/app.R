@@ -1,6 +1,27 @@
 #Fluxtools code
 #V0.7.0
 
+#Bugs:
+#
+# Warning: package ‘shinyWidgets’ was built under R version 4.5.1
+#
+# Listening on http://127.0.0.1:3238
+# Warning: No trace type specified and no positional attributes specified
+# No trace type specified:
+#   Based on info supplied, a 'scatter' trace seems appropriate.
+# Read more about this trace type -> https://plotly.com/r/reference/#scatter
+#   No scatter mode specifed:
+#   Setting the mode to markers
+# Read more about this attribute -> https://plotly.com/r/reference/#scatter-mode
+#   Warning: No trace type specified and no positional attributes specified
+# No trace type specified:
+#   Based on info supplied, a 'scatter' trace seems appropriate.
+# Read more about this trace type -> https://plotly.com/r/reference/#scatter
+#   No scatter mode specifed:
+#   Setting the mode to markers
+# Read more about this attribute -> https://plotly.com/r/reference/#scatter-mode
+
+
 #Packages
 library(shiny)
 library(plotly)
@@ -2485,7 +2506,8 @@ server <- function(input, output, session) {
       inherit = FALSE, showlegend = TRUE,
       line = list(color = col_hex, width = lwd),
       opacity = line_alpha,
-      hoverinfo = "skip"   # ← not hovertemplate
+      hovertemplate = hover_xy_tpl()
+      #hoverinfo = "skip"   # ← not hovertemplate
         # <- pretty hover; no 'hoveron' here
     )
 
@@ -2495,7 +2517,8 @@ server <- function(input, output, session) {
         inherit = FALSE, showlegend = FALSE,
         line = list(width = 0),
         fillcolor = hex_to_rgba(col_hex, min(0.35, line_alpha*0.6)),
-        hoverinfo = "skip"  # ribbons don’t need hover
+        hovertemplate = hover_xy_tpl()
+        #hoverinfo = "skip"  # ribbons don’t need hover
       )
     }
     p
@@ -2567,7 +2590,8 @@ server <- function(input, output, session) {
                                color = cols[[v]]),
                   opacity = a,
                   type = "scattergl",
-                  hoverinfo = "skip"   # ← not hovertemplate
+                  hovertemplate = hover_xy_tpl()
+                  #hoverinfo = "skip"   # ← not hovertemplate
                 )
                 if (isTRUE(input$line_show_points)) {
                   p <- p %>% plotly::add_markers(
@@ -2623,7 +2647,8 @@ server <- function(input, output, session) {
                 line  = list(width = input$line_lwd %||% 2, color = cols_ds[[src]]),
                 opacity = a,
                 type = "scattergl",
-                hoverinfo = "skip"   # ← not hovertemplate# keep lines WebGL too
+                hovertemplate = hover_xy_tpl()
+               # hoverinfo = "skip"   # ← not hovertemplate# keep lines WebGL too
               )
               if (isTRUE(input$line_show_points)) {
                 p <- p %>% plotly::add_markers(
@@ -2750,7 +2775,8 @@ server <- function(input, output, session) {
               name = v, inherit = FALSE, opacity = a,
               line  = list(width = input$line_lwd %||% 2, color = unname(cols[[v]])),
               type  = "scattergl",
-              hoverinfo = "skip"   # ← not hovertemplate
+              hovertemplate = hover_xy_tpl()
+              #hoverinfo = "skip"   # ← not hovertemplate
 
             )
             if (isTRUE(input$line_show_points)) {
@@ -2874,7 +2900,8 @@ server <- function(input, output, session) {
             data = dd_base, x_for(dd_base), y = dd_base[[v]],
             name = v, inherit = FALSE, opacity = a,
             type = "scattergl",
-            hoverinfo = "skip",   # ← not hovertemplate
+            hovertemplate = hover_xy_tpl(),
+            #hoverinfo = "skip",   # ← not hovertemplate
             #line  = list(width = input$line_lwd %||% 2, color = unname(cols[[v]]))
             line  = list(width = input$line_lwd %||% 2, color = base_col)
 
